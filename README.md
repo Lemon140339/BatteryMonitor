@@ -1,5 +1,9 @@
 # BatteryMonitor
 
+[![build](https://github.com/Lemon140339/BatteryMonitor/actions/workflows/build.yml/badge.svg)](https://github.com/Lemon140339/BatteryMonitor/actions/workflows/build.yml)
+[![release](https://img.shields.io/github/v/release/Lemon140339/BatteryMonitor?label=release)](https://github.com/Lemon140339/BatteryMonitor/releases)
+[![license](https://img.shields.io/github/license/Lemon140339/BatteryMonitor)](LICENSE)
+
 在 Windows 桌面右上角显示无线键鼠电量的轻量工具。
 
 **纯 HID 直读，不安装任何厂商驱动或后台服务。** 加一台新设备只需要改一个 JSON 文件。
