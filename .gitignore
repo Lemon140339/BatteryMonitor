@@ -1,0 +1,22 @@
+# 编译产物
+*.exe
+*.dll
+*.pdb
+
+# 运行时产物
+battery.log
+*.log
+
+# 备份
+*_baseline/
+*_backup/
+
+# 编辑器
+.vs/
+.vscode/
+*.user
+*.suo
+
+# 系统
+Thumbs.db
+desktop.ini

@@ -1,0 +1,19 @@
+{
+  "name": "KY87",
+  "vid": "0C45",
+  "pid": "FEFE",
+  "iface": "mi_03",
+  "mode": "query",
+  "battery": 4,
+  "query": {
+    "length": 33,
+    "set": { "0": "0x00", "1": "0x20", "2": "0x01", "3": "0x00" },
+    "checksum": { "type": "sum8", "range": [0, 30], "at": 31 }
+  },
+  "response": {
+    "length": 33,
+    "checksum": { "type": "sum8", "range": [0, 31], "at": 32 }
+  },
+  "pollIntervalMs": 30000,
+  "retryDelayMs": 5000
+}

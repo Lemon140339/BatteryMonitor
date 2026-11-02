@@ -1,0 +1,173 @@
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace BatteryMonitor
+{
+    /// <summary>通用 HID 设备句柄：按 VID/PID/接口片段查找并打开。</summary>
+    public sealed class HidDevice : IDisposable
+    {
+        static readonly Guid GUID_HID = new Guid("4d1e55b2-f16f-11cf-88cb-001111000030");
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct SP_DEVICE_INTERFACE_DATA
+        {
+            public int cbSize;
+            public Guid InterfaceClassGuid;
+            public int Flags;
+            public IntPtr Reserved;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct OVERLAPPED
+        {
+            public IntPtr Internal;
+            public IntPtr InternalHigh;
+            public int Offset;
+            public int OffsetHigh;
+            public IntPtr hEvent;
+        }
+
+        [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern IntPtr SetupDiGetClassDevs(ref Guid g, IntPtr e, IntPtr h, int f);
+
+        [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool SetupDiEnumDeviceInterfaces(IntPtr h, IntPtr info, ref Guid g, int i, ref SP_DEVICE_INTERFACE_DATA d);
+
+        [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool SetupDiGetDeviceInterfaceDetail(IntPtr h, ref SP_DEVICE_INTERFACE_DATA d, IntPtr buf, int size, ref int required, IntPtr info);
+
+        [DllImport("setupapi.dll", SetLastError = true)]
+        static extern bool SetupDiDestroyDeviceInfoList(IntPtr h);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr sa, uint disp, uint flags, IntPtr templ);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool ReadFile(IntPtr h, byte[] buf, int n, ref int read, ref OVERLAPPED ov);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool WriteFile(IntPtr h, byte[] buf, int n, ref int written, ref OVERLAPPED ov);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool GetOverlappedResult(IntPtr h, ref OVERLAPPED ov, ref int n, bool wait);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern IntPtr CreateEvent(IntPtr sa, bool manual, bool initial, IntPtr name);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern int WaitForSingleObject(IntPtr h, int ms);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool CloseHandle(IntPtr h);
+
+        const int DIGCF_PRESENT = 0x02;
+        const int DIGCF_DEVICEINTERFACE = 0x10;
+        const uint GENERIC_RW = 0xC0000000;
+        const uint SHARE_RW = 0x03;
+        const uint OPEN_EXISTING = 3;
+        const uint FILE_FLAG_OVERLAPPED = 0x40000000;
+        const int ERROR_IO_PENDING = 997;
+
+        IntPtr _handle = new IntPtr(-1);
+
+        public static string FindPath(string vid, string pid, string iface)
+        {
+            if (string.IsNullOrEmpty(vid) || string.IsNullOrEmpty(pid)) return null;
+            string want = ("vid_" + vid + "&pid_" + pid).ToLowerInvariant();
+
+            Guid g = GUID_HID;
+            IntPtr hdev = SetupDiGetClassDevs(ref g, IntPtr.Zero, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+            if (hdev == new IntPtr(-1)) return null;
+            try
+            {
+                for (int i = 0; ; i++)
+                {
+                    var did = new SP_DEVICE_INTERFACE_DATA();
+                    did.cbSize = Marshal.SizeOf(typeof(SP_DEVICE_INTERFACE_DATA));
+                    if (!SetupDiEnumDeviceInterfaces(hdev, IntPtr.Zero, ref g, i, ref did)) break;
+
+                    int need = 0;
+                    SetupDiGetDeviceInterfaceDetail(hdev, ref did, IntPtr.Zero, 0, ref need, IntPtr.Zero);
+                    if (need <= 0) continue;
+
+                    IntPtr buf = Marshal.AllocHGlobal(need);
+                    try
+                    {
+                        Marshal.WriteInt32(buf, 8);
+                        int got = 0;
+                        if (!SetupDiGetDeviceInterfaceDetail(hdev, ref did, buf, need, ref got, IntPtr.Zero)) continue;
+                        string path = Marshal.PtrToStringUni(new IntPtr(buf.ToInt64() + 4));
+                        if (path == null) continue;
+
+                        string low = path.ToLowerInvariant();
+                        if (!low.Contains(want)) continue;
+                        if (!string.IsNullOrEmpty(iface) && !low.Contains(iface.ToLowerInvariant())) continue;
+                        return path;
+                    }
+                    finally { Marshal.FreeHGlobal(buf); }
+                }
+            }
+            finally { SetupDiDestroyDeviceInfoList(hdev); }
+            return null;
+        }
+
+        public static HidDevice Open(string vid, string pid, string iface)
+        {
+            string path = FindPath(vid, pid, iface);
+            if (path == null) return null;
+            IntPtr h = CreateFile(path, GENERIC_RW, SHARE_RW, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, IntPtr.Zero);
+            if (h == new IntPtr(-1)) return null;
+            var dev = new HidDevice();
+            dev._handle = h;
+            return dev;
+        }
+
+        public bool IsOpen { get { return _handle != new IntPtr(-1); } }
+
+        public int Read(byte[] buf, int timeoutMs)
+        {
+            if (!IsOpen) return -1;
+            IntPtr ev = CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
+            try
+            {
+                var ov = new OVERLAPPED();
+                ov.hEvent = ev;
+                int n = 0;
+                if (!ReadFile(_handle, buf, buf.Length, ref n, ref ov))
+                {
+                    if (Marshal.GetLastWin32Error() != ERROR_IO_PENDING) return -1;
+                    if (WaitForSingleObject(ev, timeoutMs) != 0) return -1;
+                    if (!GetOverlappedResult(_handle, ref ov, ref n, false)) return -1;
+                }
+                return n;
+            }
+            finally { CloseHandle(ev); }
+        }
+
+        public bool Write(byte[] buf, int timeoutMs)
+        {
+            if (!IsOpen) return false;
+            IntPtr ev = CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
+            try
+            {
+                var ov = new OVERLAPPED();
+                ov.hEvent = ev;
+                int n = 0;
+                if (!WriteFile(_handle, buf, buf.Length, ref n, ref ov))
+                {
+                    if (Marshal.GetLastWin32Error() != ERROR_IO_PENDING) return false;
+                    if (WaitForSingleObject(ev, timeoutMs) != 0) return false;
+                    if (!GetOverlappedResult(_handle, ref ov, ref n, false)) return false;
+                }
+                return true;
+            }
+            finally { CloseHandle(ev); }
+        }
+
+        public void Dispose()
+        {
+            if (IsOpen) { CloseHandle(_handle); _handle = new IntPtr(-1); }
+        }
+    }
+}
