@@ -3,6 +3,9 @@
 *.dll
 *.pdb
 
+# 打包产物
+dist/
+
 # 运行时产物
 battery.log
 *.log

@@ -75,15 +75,30 @@ BatteryMonitor.exe --log
 
 ## 构建
 
-需要 Windows 自带的 .NET Framework 编译器：
+需要 Windows 自带的 .NET Framework 编译器，直接运行：
+
+```bat
+build.bat
+```
+
+脚本会自动找 `csc.exe`（优先 64 位），产物为 `BatteryMonitor.exe`。
+
+手动编译（等价命令）：
 
 ```bat
 C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe ^
   /nologo /target:winexe /out:BatteryMonitor.exe ^
-  src\Profile.cs src\HidDevice.cs src\DeviceWorker.cs ^
-  src\WidgetForm.cs src\DebugLog.cs src\Program.cs ^
+  src\*.cs ^
   /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll
 ```
+
+生成发布包（编译 + 打包成 zip）：
+
+```bat
+package.bat
+```
+
+产物在 `dist\BatteryMonitor-v1.0.0.zip`，包含 exe、devices、文档和脚本。
 
 ## 目录结构
 
