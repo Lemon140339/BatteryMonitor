@@ -136,3 +136,23 @@ uninstall-autostart.bat   取消开机自启
 ## License
 
 MIT，见 [LICENSE](LICENSE)。
+
+---
+
+## English
+
+A tiny overlay for Windows that shows wireless mouse and keyboard battery levels
+in the top-right corner of the screen.
+
+- **Direct HID access** — no vendor drivers, no background services
+- **Config-driven** — device protocols live in `devices/*.json`; supporting a new
+  device is a JSON edit, not a code change
+- **Single ~25 KB exe** — only needs .NET Framework 4.x
+- **Read-only** — it never writes to the device
+
+Build with `build.bat`, package a release with `package.bat`.
+See `docs/ADD_DEVICE.md` for adding devices (capture, locate the battery byte,
+write a profile).
+
+Not affiliated with any hardware vendor. See `DISCLAIMER.md` before use.
+Licensed under MIT.
