@@ -4,7 +4,7 @@
 
 **纯 HID 直读，不安装任何厂商驱动或后台服务。** 加一台新设备只需要改一个 JSON 文件。
 
-> 中文文档见下方，English summary at the bottom.
+![screenshot](docs/screenshot.png)
 
 ---
 
@@ -18,8 +18,8 @@
 ## 显示效果
 
 ```
-        IN10  38%
-        KY87  74%
+        IN10  35%
+        KY87  76%
 ```
 
 - 设备名按电量变色：绿 >50% / 黄 20–50% / 红 <20%
@@ -34,11 +34,11 @@ BatteryMonitor\
 ├── devices\
 │   ├── in10.json
 │   └── ky87.json
-└── 安装开机自启.bat
+└── install-autostart.bat
 ```
 
 1. 双击 `BatteryMonitor.exe`
-2. 需要开机自启：右键 `安装开机自启.bat` → 以管理员身份运行
+2. 需要开机自启：右键 `install-autostart.bat` → 以管理员身份运行
 
 退出：任务管理器结束 `BatteryMonitor.exe`（界面鼠标穿透，没有可点按钮）。
 
@@ -96,6 +96,10 @@ devices/
   *.json            设备描述
 docs/
   ADD_DEVICE.md     如何适配新设备
+  screenshot.png    界面截图
+USAGE-zh.txt              中文使用说明
+install-autostart.bat     注册开机自启
+uninstall-autostart.bat   取消开机自启
 ```
 
 ## 已知限制
@@ -103,30 +107,13 @@ docs/
 - 键盘休眠时会读不到，保留上次数值；按键后自动恢复
 - 查询类设备默认 30 秒轮询一次
 - 仅 Windows（依赖 setupapi / user32）
-- x64 与 x86 都可用，但需对应架构的 csc
+- 需要 .NET Framework 4.x（Windows 10/11 自带）
 
 ## 免责声明
 
-本项目的设备协议通过对公开软件的行为观察获得，**与任何厂商无关，不包含厂商代码**。
-仅供个人在自己设备上使用。部分厂商的用户协议可能禁止逆向工程，请自行判断合规性。
-使用本工具造成的任何问题由使用者自行承担。
+本项目与任何硬件厂商无关，协议来自对公开行为的观察分析，只做读取，不写设备。
+完整条款见 [DISCLAIMER.md](DISCLAIMER.md)，请在使用前阅读。
 
 ## License
 
 MIT，见 [LICENSE](LICENSE)。
-
----
-
-## English summary
-
-BatteryMonitor is a tiny Windows tray-less overlay that shows battery levels of
-wireless mice and keyboards in the top-right corner of the screen.
-
-- Reads HID devices directly — no vendor drivers, no background services
-- Device protocols are declared in `devices/*.json`, so supporting a new device
-  is a config change, not a code change
-- Single ~22 KB exe, requires only .NET Framework 4.x
-- Read-only: it never writes to the device
-
-Build with the bundled `csc.exe`. See `docs/ADD_DEVICE.md` for adapting new
-devices. Licensed under MIT.

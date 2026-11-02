@@ -35,8 +35,8 @@
     权限   最高
     操作   C:\Program Files\BatteryMonitor\BatteryMonitor.exe
 
-需要重新设置时：右键「安装开机自启.bat」→ 以管理员身份运行。
-取消自启：右键「卸载开机自启.bat」→ 以管理员身份运行。
+需要重新设置时：右键「install-autostart.bat」→ 以管理员身份运行。
+取消自启：右键「uninstall-autostart.bat」→ 以管理员身份运行。
 
 注意：安装脚本是覆盖式的，不需要先卸载。
 
@@ -45,7 +45,7 @@
 --------------
 任务里存的是绝对路径，文件夹一挪就失效。
 
-处理办法：在新位置右键「安装开机自启.bat」→ 以管理员身份运行，
+处理办法：在新位置右键「install-autostart.bat」→ 以管理员身份运行，
 脚本会用新路径覆盖同名任务，并立即启动。
 
 
@@ -81,5 +81,5 @@
   hidlib.cs               HID 读取层源码
   BatteryMonitor.cs       界面与逻辑源码
   使用说明.txt             本文件
-  安装开机自启.bat          注册计划任务（需管理员）
-  卸载开机自启.bat          删除计划任务（需管理员）
+  install-autostart.bat          注册计划任务（需管理员）
+  uninstall-autostart.bat          删除计划任务（需管理员）
