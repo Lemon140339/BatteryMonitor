@@ -63,6 +63,9 @@ BatteryMonitor.exe --log
 
 核心流程：抓一次包 → 找到电量字节 → 写一个 JSON → 用 `--log` 验证。
 
+写错了不会崩：屏幕右上角会多一行红字「配置有误 N 项」，
+同目录生成 `config-error.log` 逐条说明哪一行、哪个字段有问题。
+
 ## 内置设备描述
 
 | 名称 | 接收器 VID:PID | 接口 | 模式 |
@@ -94,6 +97,7 @@ src/
   Program.cs        入口
 devices/
   *.json            设备描述
+  device.schema.json  JSON Schema（编辑器自动补全）
 docs/
   ADD_DEVICE.md     如何适配新设备
   screenshot.png    界面截图

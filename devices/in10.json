@@ -1,4 +1,5 @@
 {
+  "$schema": "./device.schema.json",
   "name": "IN10",
   "vid": "1D57",
   "pid": "FA65",

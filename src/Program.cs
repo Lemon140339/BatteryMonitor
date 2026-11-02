@@ -19,8 +19,24 @@ namespace BatteryMonitor
             Application.SetCompatibleTextRenderingDefault(false);
 
             string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devices");
-            string error;
-            var profiles = ProfileLoader.Load(dir, out error);
+            List<string> problems;
+            var profiles = ProfileLoader.Load(dir, out problems);
+
+            if (problems.Count > 0)
+            {
+                try
+                {
+                    string log = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config-error.log");
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine("配置检查发现 " + problems.Count + " 个问题（" + DateTime.Now + "）");
+                    sb.AppendLine();
+                    foreach (var m in problems) sb.AppendLine("  · " + m);
+                    sb.AppendLine();
+                    sb.AppendLine("字段说明见 docs/ADD_DEVICE.md");
+                    File.WriteAllText(log, sb.ToString(), System.Text.Encoding.UTF8);
+                }
+                catch { }
+            }
 
             var workers = new List<DeviceWorker>();
             foreach (var p in profiles)
@@ -30,7 +46,7 @@ namespace BatteryMonitor
             }
             foreach (var w in workers) w.Start();
 
-            Application.Run(new WidgetForm(workers, error));
+            Application.Run(new WidgetForm(workers, problems));
         }
     }
 }

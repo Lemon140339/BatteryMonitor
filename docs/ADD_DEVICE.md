@@ -219,7 +219,56 @@ BatteryMonitor.exe --log
 
 ---
 
-## 9. 提交
+## 9. 配置校验
+
+程序启动时会检查 `devices/` 下每个 JSON。有问题的配置不会让程序崩溃，而是：
+
+- 屏幕右上角多一行红字：**配置有误 3 项**
+- 同目录生成 `config-error.log`，列出每一处问题
+
+```
+配置检查发现 4 个问题（2026/11/2 17:24:20）
+
+  · mydevice.json：vid 必须是 4 位十六进制，例如 "1D57"（当前：ZZZZ）
+  · mydevice.json：pid 必须是 4 位十六进制，例如 "FA65"（当前：123）
+  · mydevice.json：mode 只能是 "passive" 或 "query"（当前：wrong）
+  · mydevice.json：battery 未设置或为 0，请填电量所在的字节下标（从 0 开始）
+```
+
+### 错误对照表
+
+| 提示 | 原因 | 修法 |
+|---|---|---|
+| `vid 必须是 4 位十六进制` | 少了位、写成了十进制、带了 `0x` | 写成 `"1D57"` 这种，四位、不带前缀 |
+| `缺少 name` | 没写名字 | 加上 `"name": "设备名"` |
+| `battery 未设置或为 0` | 电量下标为 0 或没填 | 从 0 开始数，第一个字节是 0 |
+| `battery 超出了 readLength 的范围` | 下标大于报文长度 | 重新数一遍 |
+| `被动模式必须设置 readLength` | `mode` 是 passive 但没写长度 | 填报告的实际字节数 |
+| `match 的值无法解析` | 写成了 `"40"` 以外的东西 | 用 `"0x40"` 或 `"64"` |
+| `查询模式必须提供 query.length` | 缺发送帧长度 | 填发送帧的总字节数 |
+| `查询模式必须提供 response.length` | 缺回复长度 | 填期望收到的字节数 |
+| `与 xxx 重名` | 两个 JSON 用了同一个 `name` | 改掉其中一个 |
+| `JSON 解析失败` | 少逗号、多逗号、引号不配对 | 用编辑器的 JSON 校验功能查 |
+
+### 编辑器自动补全
+
+`devices/device.schema.json` 是 JSON Schema。在设备文件里加上这行：
+
+```json
+"$schema": "./device.schema.json",
+```
+
+VS Code、JetBrains 等编辑器就会：
+
+- 自动补全字段名
+- 实时标红不合法的值
+- 悬停显示每个字段的说明
+
+内置的 `in10.json` 和 `ky87.json` 已经加了这行，可以直接当模板复制。
+
+---
+
+## 10. 提交
 
 把新的 JSON 放到 `devices/` 下，在 README 的设备表里加一行，
 提 PR 时说明：

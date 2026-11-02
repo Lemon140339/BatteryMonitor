@@ -32,17 +32,18 @@ namespace BatteryMonitor
         const int ULW_ALPHA = 2;
 
         readonly List<DeviceWorker> _workers;
-        readonly string _error;
+        readonly List<string> _problems;
         readonly int _width = 170;
         readonly int _height;
         System.Windows.Forms.Timer _timer;
 
-        public WidgetForm(List<DeviceWorker> workers, string error)
+        public WidgetForm(List<DeviceWorker> workers, List<string> problems)
         {
             _workers = workers ?? new List<DeviceWorker>();
-            _error = error;
+            _problems = problems ?? new List<string>();
 
             int rows = _workers.Count > 0 ? _workers.Count : 1;
+            if (_problems.Count > 0) rows++;
             _height = 12 + rows * 24;
 
             FormBorderStyle = FormBorderStyle.None;
@@ -96,18 +97,24 @@ namespace BatteryMonitor
                     g.Clear(Color.Transparent);
                     g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
+                    int y = 6;
                     if (_workers.Count == 0)
                     {
-                        DrawRow(g, 5, "无设备配置", -1, "devices/ 为空");
+                        DrawRow(g, y, "无设备配置", -1, "devices/ 为空");
+                        y += 24;
                     }
                     else
                     {
-                        int y = 6;
                         foreach (var w in _workers)
                         {
                             DrawRow(g, y, w.Name, w.Percent, null);
                             y += 24;
                         }
+                    }
+
+                    if (_problems.Count > 0)
+                    {
+                        DrawWarn(g, y, "配置有误 " + _problems.Count + " 项");
                     }
                 }
                 Apply(bmp);
@@ -141,6 +148,19 @@ namespace BatteryMonitor
                     g.DrawString(name, f, bc, xName, y);
                     g.DrawString(name, f, bc, xName + 0.45f, y);
                 }
+            }
+        }
+
+        void DrawWarn(Graphics g, int y, string text)
+        {
+            using (var f = new Font("Microsoft YaHei", 9f, FontStyle.Bold))
+            {
+                float w = g.MeasureString(text, f).Width;
+                float x = _width - 8 - w;
+                using (var shadow = new SolidBrush(Color.FromArgb(150, 0, 0, 0)))
+                    g.DrawString(text, f, shadow, x + 1.2f, y + 1.2f);
+                using (var b = new SolidBrush(Color.FromArgb(255, 120, 90)))
+                    g.DrawString(text, f, b, x, y);
             }
         }
 
