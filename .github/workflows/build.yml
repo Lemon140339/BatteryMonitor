@@ -1,0 +1,60 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build with csc
+        shell: cmd
+        run: build.bat
+
+      - name: Verify output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'BatteryMonitor.exe')) {
+            Write-Error 'BatteryMonitor.exe not produced'
+            exit 1
+          }
+          $size = (Get-Item 'BatteryMonitor.exe').Length
+          Write-Host "BatteryMonitor.exe = $size bytes"
+          if ($size -lt 10000) {
+            Write-Error 'output looks too small, build probably failed'
+            exit 1
+          }
+
+      - name: Validate device profiles
+        shell: pwsh
+        run: |
+          $schema = 'devices/device.schema.json'
+          $files = Get-ChildItem devices -Filter *.json | Where-Object { $_.Name -ne 'device.schema.json' }
+          Write-Host "profiles: $($files.Count)"
+          foreach ($f in $files) {
+            try {
+              $null = Get-Content $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+              Write-Host "  OK  $($f.Name)"
+            } catch {
+              Write-Error "  BAD $($f.Name): $($_.Exception.Message)"
+              exit 1
+            }
+          }
+
+      - name: Package release zip
+        shell: cmd
+        run: package.bat
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatteryMonitor-release
+          path: dist/*.zip
+          if-no-files-found: error

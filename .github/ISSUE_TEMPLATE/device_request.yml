@@ -1,0 +1,73 @@
+name: New device
+description: 请求支持一款新的无线键鼠
+title: "[device] "
+labels: ["device"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        新增设备**不需要改代码**，只需要一个 JSON 配置。
+        如果你愿意自己适配，照着 [docs/ADD_DEVICE.md](../blob/main/docs/ADD_DEVICE.md) 走一遍，
+        然后直接提 PR 会更快。
+
+        下面这些信息足够我或其他人帮你写配置。
+
+  - type: input
+    id: model
+    attributes:
+      label: 设备型号
+      placeholder: 例如 罗技 G304、雷蛇 炼狱蝰蛇 V2
+    validations:
+      required: true
+
+  - type: input
+    id: vidpid
+    attributes:
+      label: 接收器 VID:PID
+      description: |
+        PowerShell 查询：
+        `Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Enum\HID' | Select-Object -ExpandProperty PSChildName`
+      placeholder: 例如 1D57:FA65
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: 连接方式
+      options:
+        - 2.4G 接收器
+        - 蓝牙
+        - USB 有线
+        - 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: official
+    attributes:
+      label: 官方软件名称
+      description: 用来双击读数的那款软件
+      placeholder: 例如 iCUE、G HUB、英菲克 HUB
+    validations:
+      required: false
+
+  - type: dropdown
+    id: battery_kind
+    attributes:
+      label: 官方软件显示的电量形式
+      options:
+        - 精确百分比（如 87%）
+        - 分档显示（如 4 格、5 档）
+        - 只有图标，没有数字
+        - 不显示电量
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息
+      description: 抓包截图、你尝试过的配置、其他线索
+    validations:
+      required: false

@@ -1,0 +1,71 @@
+name: Bug report
+description: 电量读不出来、显示不对、程序异常
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量把下面的信息填完整，尤其是日志——
+        没有日志的话很难判断问题出在协议、配置还是设备休眠。
+
+  - type: input
+    id: device
+    attributes:
+      label: 设备型号
+      description: 鼠标或键盘的完整型号
+      placeholder: 例如 英菲克 IN10、NDIY KY87
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: 连接方式
+      options:
+        - 2.4G 接收器
+        - 蓝牙
+        - USB 有线
+        - 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 版本
+      placeholder: 例如 Windows 11 23H2
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 现象
+      description: 屏幕上显示什么？是一直 `--`、数字不对，还是程序直接退出？
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: |
+        请附上以下文件的内容（有哪个贴哪个）：
+
+        - `config-error.log` —— 配置校验结果
+        - `battery.log` —— 用 `BatteryMonitor.exe --log` 启动后生成的读数记录
+
+        把文件拖进这个输入框即可上传。
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 自查
+      options:
+        - label: 官方驱动软件能正常显示电量（说明设备确实会上报）
+        - label: 已按 docs/ADD_DEVICE.md 检查过配置字段
+        - label: 已尝试按几下键盘 / 移动鼠标唤醒设备

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 适配新设备的方法
+    url: https://github.com/Lemon140339/BatteryMonitor/blob/main/docs/ADD_DEVICE.md
+    about: 抓包、定位电量字节、写 JSON 配置的完整流程
+  - name: 使用说明
+    url: https://github.com/Lemon140339/BatteryMonitor/blob/main/USAGE-zh.txt
+    about: 显示效果、开机自启、退出方式、排错
