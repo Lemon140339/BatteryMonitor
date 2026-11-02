@@ -1,8 +1,12 @@
 @echo off
 setlocal
 set "HERE=%~dp0"
+
+rem 版本号：第一个参数，缺省为 v1.0.0
+if "%~1"=="" (set "VER=v1.0.0") else (set "VER=%~1")
+
 set "DIST=%HERE%dist\BatteryMonitor"
-set "ZIP=%HERE%dist\BatteryMonitor-v1.0.0.zip"
+set "ZIP=%HERE%dist\BatteryMonitor-%VER%.zip"
 
 call "%HERE%build.bat"
 if errorlevel 1 exit /b 1
@@ -29,4 +33,4 @@ if errorlevel 1 (
 )
 
 echo.
-echo Done -^> dist\BatteryMonitor-v1.0.0.zip
+echo Done -^> dist\BatteryMonitor-%VER%.zip

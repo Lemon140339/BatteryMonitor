@@ -132,6 +132,16 @@ uninstall-autostart.bat   取消开机自启
 - 仅 Windows（依赖 setupapi / user32）
 - 需要 .NET Framework 4.x（Windows 10/11 自带）
 
+## 更多文档
+
+| 文档 | 内容 |
+|---|---|
+| [docs/DESIGN.md](docs/DESIGN.md) | 设计取舍：为什么是纯 HID、为什么不用托盘、为什么锁 C# 5 |
+| [docs/ADD_DEVICE.md](docs/ADD_DEVICE.md) | 适配新设备的完整流程 |
+| [RELEASING.md](RELEASING.md) | 发版清单 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南（含 C# 5 语法约束） |
+| [DISCLAIMER.md](DISCLAIMER.md) | 免责声明 |
+
 ## 参与贡献
 
 - 报告问题：用 [Issue 模板](https://github.com/Lemon140339/BatteryMonitor/issues/new/choose)
