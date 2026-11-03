@@ -35,7 +35,6 @@ namespace BatteryMonitor
         readonly WidgetForm _widget;
         readonly TrayView _tray;
         readonly Timer _timer;
-        readonly Timer _topTimer;
         readonly WinEventDelegate _winEventProc;
         readonly IntPtr _hook;
 
@@ -73,12 +72,6 @@ namespace BatteryMonitor
             _timer.Interval = 1000;
             _timer.Tick += delegate { Refresh(); };
             _timer.Start();
-
-            // 全屏期间单独用高频计时器把 Z 序顶回去：
-            // 有的播放器每帧都在给自己 SetWindowPos，1 秒一次抢不过它
-            _topTimer = new Timer();
-            _topTimer.Interval = 200;
-            _topTimer.Tick += delegate { KeepOnTop(); };
 
             Refresh();
         }
@@ -171,11 +164,27 @@ namespace BatteryMonitor
 
             if (show)
             {
-                _widget.RaiseTopmost();
-                _widget.RenderNow();
-                if (!_topTimer.Enabled) _topTimer.Start();
+                // 每秒顶一次就够：前台一变还有 SetWinEventHook 立刻重算。
+                // 曾经试过 200ms 高频顶，但对「直通呈现」的全屏应用（媒体播放器）毫无作用，
+                // 只多烧 CPU，所以退回 1 秒一次。
+                // 先看上一秒顶完之后有没有被谁盖住，再顶——顺序反过来就永远测不到竞争。
+                string offender;
+                if (_widget.IsCovered(out offender))
+                {
+                    if (!_lastCovered || offender != _lastOffender)
+                    {
+                        _lastCovered = true;
+                        _lastOffender = offender;
+                        DebugLog.Write("悬浮层被挡住：" + offender);
+                    }
+                }
+                else if (_lastCovered)
+                {
+                    _lastCovered = false;
+                    _lastOffender = null;
+                    DebugLog.Write("悬浮层在最前");
+                }
 
-                // 诊断：把「紧挨在上面的是谁」记下来。上面没窗口=合成问题，上面是播放器=Z 序问题
                 string above = _widget.NeighborAbove();
                 if (above != _lastNeighborAbove)
                 {
@@ -184,6 +193,9 @@ namespace BatteryMonitor
                         ? "悬浮层上方没有窗口（已在最顶层）"
                         : "悬浮层上方：" + above);
                 }
+
+                _widget.RaiseTopmost();
+                _widget.RenderNow();
 
                 // --selfcheck：每两秒从屏幕上抓自己那块，数白像素。
                 // 数字接近 0 说明窗口根本没合成出来，而不是被谁压住。
@@ -194,45 +206,8 @@ namespace BatteryMonitor
                     DebugLog.Write("自检：屏幕上的白像素=" + visible + "（区域 " + w + "x" + h + "）");
                 }
             }
-            else if (_topTimer.Enabled)
-            {
-                _topTimer.Stop();
-            }
         }
 
-        /// <summary>
-        /// 高频把悬浮层顶回最前，并在被挡住时记一次日志（不刷屏）。
-        /// 只在显示期间运行。
-        /// </summary>
-        void KeepOnTop()
-        {
-            if (_disposed || !_overlayVisible)
-            {
-                _topTimer.Stop();
-                return;
-            }
-
-            // 先看「此刻是否被压住」，再往上顶。
-            // 顺序反过来的话，检查永远发生在我们自己顶完之后，测不到真实的竞争结果。
-            string offender;
-            if (_widget.IsCovered(out offender))
-            {
-                if (!_lastCovered || offender != _lastOffender)
-                {
-                    _lastCovered = true;
-                    _lastOffender = offender;
-                    DebugLog.Write("悬浮层被挡住：" + offender);
-                }
-            }
-            else if (_lastCovered)
-            {
-                _lastCovered = false;
-                _lastOffender = null;
-                DebugLog.Write("悬浮层在最前");
-            }
-
-            _widget.RaiseTopmost();
-        }
 
         void OnModeRequested(DisplayMode mode)
         {
@@ -255,7 +230,6 @@ namespace BatteryMonitor
         {
             DebugLog.Write("退出");
             _timer.Stop();
-            _topTimer.Stop();
             ExitThread();
         }
 
@@ -266,7 +240,6 @@ namespace BatteryMonitor
                 _disposed = true;
                 try { if (_hook != IntPtr.Zero) UnhookWinEvent(_hook); } catch { }
                 try { _timer.Stop(); } catch { }
-                try { _topTimer.Stop(); } catch { }
                 try { _tray.Dispose(); } catch { }
                 try { _widget.Dispose(); } catch { }
             }
