@@ -5,10 +5,9 @@
 [![license](https://img.shields.io/github/license/Lemon140339/BatteryMonitor)](LICENSE)
 
 在 Windows 桌面右上角显示无线键鼠电量的轻量工具。
+平时待在托盘里，全屏看视频或玩游戏时自动浮到右上角。
 
 **纯 HID 直读，不安装任何厂商驱动或后台服务。** 加一台新设备只需要改一个 JSON 文件。
-
-![screenshot](docs/screenshot.png)
 
 ---
 
@@ -22,19 +21,13 @@
 
 ## 显示效果
 
-平时托盘里**一台设备画一个电池**（竖着排，各自按电量着色），鼠标悬停显示具体数值：
+平时托盘里**一台设备画一个电池**（竖着排，各自按电量着色），鼠标悬停看具体数值：
 
-```
-        IN10  35%
-        KY87  76%
-```
+![托盘图标](docs/tray.png)
 
-全屏（视频 / 无边框游戏）时悬浮层自动出现在右上角：
+全屏（浏览器 / 无边框游戏）时悬浮层自动浮出右上角：
 
-```
-        IN10  35%
-        KY87  76%
-```
+![悬浮层](docs/screenshot.png)
 
 - 设备名按电量变色：绿 >50% / 黄 20–50% / 红 <20%
 - 百分比为浅白色，带淡黑描边，浅色壁纸下也清晰
@@ -149,7 +142,9 @@ devices/
 docs/
   ADD_DEVICE.md       如何适配新设备
   DESIGN.md           设计取舍
-  screenshot.png      界面截图
+  screenshot.png      悬浮层截图
+  tray.png            托盘图标样张
+  social-preview.png  仓库社交预览图（在 GitHub 设置里上传）
 USAGE-zh.txt              中文使用说明
 install-autostart.bat     注册开机自启
 uninstall-autostart.bat   取消开机自启
@@ -208,13 +203,14 @@ MIT，见 [LICENSE](LICENSE)。
 
 ## English
 
-A tiny overlay for Windows that shows wireless mouse and keyboard battery levels
-in the top-right corner of the screen.
+A tiny Windows tray app that shows wireless mouse and keyboard battery levels.
+It stays in the notification area and pops a small overlay into the top-right
+corner when you go fullscreen (browser or borderless games).
 
 - **Direct HID access** — no vendor drivers, no background services
 - **Config-driven** — device protocols live in `devices/*.json`; supporting a new
   device is a JSON edit, not a code change
-- **Single ~28 KB exe** — only needs .NET Framework 4.x
+- **Single ~46 KB exe** — only needs .NET Framework 4.x
 - **Read-only** — it never writes to the device
 
 Build with `build.bat`, package a release with `package.bat`.
