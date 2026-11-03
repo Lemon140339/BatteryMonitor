@@ -46,6 +46,7 @@ namespace BatteryMonitor
         IntPtr _lastFullscreenWindow = IntPtr.Zero;
         bool _lastCovered;
         string _lastOffender;
+        string _lastNeighborAbove;
 
         public WidgetApp(IList<DeviceWorker> workers, IList<string> problems)
         {
@@ -170,6 +171,16 @@ namespace BatteryMonitor
                 _widget.RaiseTopmost();
                 _widget.RenderNow();
                 if (!_topTimer.Enabled) _topTimer.Start();
+
+                // 诊断：把「紧挨在上面的是谁」记下来。上面没窗口=合成问题，上面是播放器=Z 序问题
+                string above = _widget.NeighborAbove();
+                if (above != _lastNeighborAbove)
+                {
+                    _lastNeighborAbove = above;
+                    DebugLog.Write(above == null
+                        ? "悬浮层上方没有窗口（已在最顶层）"
+                        : "悬浮层上方：" + above);
+                }
             }
             else if (_topTimer.Enabled)
             {

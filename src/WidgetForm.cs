@@ -47,6 +47,7 @@ namespace BatteryMonitor
         [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
 
         const uint GW_HWNDNEXT = 2;
+        const uint GW_HWNDPREV = 3;
 
         const byte AC_SRC_OVER = 0;
         const byte AC_SRC_ALPHA = 1;
@@ -139,6 +140,18 @@ namespace BatteryMonitor
                 }
                 Apply(bmp);
             }
+        }
+
+        /// <summary>
+        /// 紧挨在我们上面的那个窗口（Z 序）——诊断「到底谁压在上面」。
+        /// 返回 null 表示我们就在最顶层。
+        /// </summary>
+        public string NeighborAbove()
+        {
+            if (!IsHandleCreated || !Visible) return null;
+            IntPtr above = GetWindow(Handle, GW_HWNDPREV);
+            if (above == IntPtr.Zero) return null;
+            return FullscreenWatcher.Describe(above);
         }
 
         /// <summary>
