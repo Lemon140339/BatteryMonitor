@@ -14,12 +14,22 @@
 
 ## 特性
 
-- **透明文字层** —— 屏幕右上角，背景完全透明，鼠标穿透，不影响任何点击
+- **两种形态** —— 平时待在托盘（悬停看电量），全屏看视频或玩游戏时自动浮到右上角
+- **透明文字层** —— 右上层背景完全透明，鼠标穿透，不影响任何点击
 - **配置驱动** —— 设备协议写在 `devices/*.json`，新增设备不用改代码
-- **单文件 exe** —— 不到 30 KB，无第三方依赖（只需 .NET Framework 4.x）
+- **单文件 exe** —— 约 40 KB，无第三方依赖（只需 .NET Framework 4.x）；托盘图标是代码画的，不带资源文件
 - **只读** —— 不写设备、不改设置，仅做查询与监听
 
 ## 显示效果
+
+平时托盘里一个电池图标（按最低电量变色），鼠标悬停显示：
+
+```
+        IN10  35%
+        KY87  76%
+```
+
+全屏（视频 / 无边框游戏）时悬浮层自动出现在右上角：
 
 ```
         IN10  35%
@@ -30,7 +40,7 @@
 - 百分比为浅白色，带淡黑描边，浅色壁纸下也清晰
 - 设备名与百分比各占一列、右边缘对齐：`100%` 和 `7%` 都不会把设备名挤歪
 - 宽度按内容自适应，设备名多长都不会被裁
-- 固定右上角、置顶、不可拖动、鼠标穿透
+- 悬浮层固定右上角、置顶、不可拖动、鼠标穿透
 
 ## 快速开始
 
@@ -46,7 +56,20 @@ BatteryMonitor\
 1. 双击 `BatteryMonitor.exe`
 2. 需要开机自启：右键 `install-autostart.bat` → 以管理员身份运行
 
-退出：任务管理器结束 `BatteryMonitor.exe`（界面鼠标穿透，没有可点按钮）。
+启动时会先试注册托盘图标；注册不了才弹 UAC 提权重来一次（拒绝也能用，退化成一直显示悬浮层）。
+
+退出：**托盘图标右键 → 退出**。也可以在任务管理器里结束 `BatteryMonitor.exe`。
+
+## 托盘菜单
+
+| 项 | 作用 |
+|---|---|
+| `IN10 100%` 等 | 只读，显示每台设备当前电量 |
+| 自动：全屏时显示悬浮层 | 默认。平时只留托盘，全屏时浮出 |
+| 总是显示悬浮层 | 不管全屏与否都显示 |
+| 隐藏悬浮层，只留托盘 | 只在托盘里看 |
+| 退出 | 结束程序 |
+
 
 ## 调试模式
 
@@ -110,19 +133,23 @@ package.bat v1.0.1
 
 ```
 src/
-  Profile.cs        设备描述模型 + JSON 加载
-  HidDevice.cs      通用 HID 打开/读写
-  DeviceWorker.cs   按 profile 驱动设备（被动 / 查询）
-  WidgetRender.cs   排版与绘制（列对齐、宽度自适应，可离屏渲染）
-  WidgetForm.cs     透明文字层
-  DebugLog.cs       --log 支持
-  Program.cs        入口
+  Profile.cs          设备描述模型 + JSON 加载
+  HidDevice.cs        通用 HID 打开/读写
+  DeviceWorker.cs     按 profile 驱动设备（被动 / 查询）
+  WidgetRender.cs     排版与绘制（列对齐、宽度自适应，可离屏渲染）
+  WidgetForm.cs       透明文字层（悬浮层）
+  TrayView.cs         托盘图标（代码画的电池）+ 悬停提示 + 右键菜单
+  FullscreenWatcher.cs 判断前台是否全屏
+  WidgetApp.cs        显示策略：托盘 / 悬浮层怎么分工
+  DebugLog.cs         --log 支持
+  Program.cs          入口（含按需提权）
 devices/
-  *.json            设备描述
+  *.json              设备描述
   device.schema.json  JSON Schema（编辑器自动补全）
 docs/
-  ADD_DEVICE.md     如何适配新设备
-  screenshot.png    界面截图
+  ADD_DEVICE.md       如何适配新设备
+  DESIGN.md           设计取舍
+  screenshot.png      界面截图
 USAGE-zh.txt              中文使用说明
 install-autostart.bat     注册开机自启
 uninstall-autostart.bat   取消开机自启
@@ -133,22 +160,24 @@ uninstall-autostart.bat   取消开机自启
 - 键盘休眠时会读不到，保留上次数值；按键后自动恢复
   （连续 5 分钟都读不到才退回 `--`，避免旧值一直冒充实时值）
 - 查询类设备默认 30 秒轮询一次
-- 暂无托盘图标：这是权限妥协，不是设计约束（见 [docs/DESIGN.md](docs/DESIGN.md)）
-- 仅 Windows（依赖 setupapi / user32）
+- **独占全屏（D3D exclusive）下看不到悬浮层**：游戏接管了屏幕合成，分层窗口画不上去；
+  无边框窗口化全屏可以。这时只能靠托盘（它也被盖住，要切出来才看得到）
+- Windows 11 默认把新图标收进任务栏的「^」溢出区，想常驻可见就把它拖出来
+- 有些机器的通知区只允许高权限进程注册图标，此时启动会弹一次 UAC（拒绝也能用，退回纯悬浮层）
+- 仅 Windows（依赖 setupapi / user32 / shell32）
 - 需要 .NET Framework 4.x（Windows 10/11 自带）
 
 ## 路线图
 
 - `v1.0.x`：修 bug、稳定性
-- 下一步：尝试**托盘图标版**。`Shell_NotifyIcon` 在受权限限制的桌面外壳下会失败，
-  所以第一版先做悬浮层；托盘版落地后，悬浮层保留为降级方案
+- `v1.1.0`：托盘图标 + 全屏自动浮出 + 按需提权（已完成）
 - 不做：灯光控制、按键重映射、跨平台（理由见 [docs/DESIGN.md](docs/DESIGN.md)）
 
 ## 更多文档
 
 | 文档 | 内容 |
 |---|---|
-| [docs/DESIGN.md](docs/DESIGN.md) | 设计取舍：为什么是纯 HID、为什么先做悬浮层、为什么锁 C# 5 |
+| [docs/DESIGN.md](docs/DESIGN.md) | 设计取舍：为什么是纯 HID、托盘与悬浮层怎么分工、为什么锁 C# 5 |
 | [docs/ADD_DEVICE.md](docs/ADD_DEVICE.md) | 适配新设备的完整流程 |
 | [RELEASING.md](RELEASING.md) | 发版清单 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南（含 C# 5 语法约束） |

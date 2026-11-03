@@ -174,6 +174,15 @@ namespace BatteryMonitor
             return g.MeasureString(text, font, new PointF(0f, 0f), Typographic);
         }
 
+        /// <summary>电量对应的颜色；悬浮层文字和托盘图标共用这一套。</summary>
+        public static Color ColorOf(int percent)
+        {
+            if (percent < 0) return Color.Gray;
+            if (percent > 50) return Color.FromArgb(46, 204, 113);
+            if (percent > 20) return Color.FromArgb(241, 196, 15);
+            return Color.FromArgb(231, 76, 60);
+        }
+
         static Brush BrushOf(int percent)
         {
             if (percent < 0) return GreyBrush;

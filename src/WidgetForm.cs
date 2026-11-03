@@ -34,11 +34,10 @@ namespace BatteryMonitor
         const int ScreenRightMargin = 12;
         const int ScreenTopMargin = 12;
 
-        readonly List<DeviceWorker> _workers;
-        readonly List<string> _problems;
-        System.Windows.Forms.Timer _timer;
+        readonly IList<DeviceWorker> _workers;
+        readonly IList<string> _problems;
 
-        public WidgetForm(List<DeviceWorker> workers, List<string> problems)
+        public WidgetForm(IList<DeviceWorker> workers, IList<string> problems)
         {
             _workers = workers ?? new List<DeviceWorker>();
             _problems = problems ?? new List<string>();
@@ -48,11 +47,6 @@ namespace BatteryMonitor
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
             Size = new Size(170, 30);
-
-            _timer = new System.Windows.Forms.Timer();
-            _timer.Interval = 1000;
-            _timer.Tick += (s, e) => Render();
-            _timer.Start();
         }
 
         protected override CreateParams CreateParams
@@ -71,32 +65,22 @@ namespace BatteryMonitor
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
-            Render();
+            RenderNow();
         }
 
-        List<WidgetRow> BuildRows()
+        protected override void OnVisibleChanged(EventArgs e)
         {
-            var rows = new List<WidgetRow>();
-            if (_workers.Count == 0)
-            {
-                rows.Add(new WidgetRow("无设备配置", -1, "devices/ 为空"));
-                return rows;
-            }
-            foreach (var w in _workers) rows.Add(new WidgetRow(w.Name, w.Percent, null));
-            return rows;
+            base.OnVisibleChanged(e);
+            if (Visible) RenderNow();
         }
 
-        string WarnText()
+        /// <summary>由 WidgetApp 每秒调用；隐藏时不画，省掉无意义的合成。</summary>
+        public void RenderNow()
         {
-            return _problems.Count > 0 ? "配置有误 " + _problems.Count + " 项" : null;
-        }
+            if (!IsHandleCreated || !Visible) return;
 
-        void Render()
-        {
-            if (!IsHandleCreated) return;
-
-            var rows = BuildRows();
-            string warn = WarnText();
+            var rows = WidgetApp.BuildRows(_workers);
+            string warn = WidgetApp.WarnText(_problems);
             var layout = WidgetRender.Measure(rows, warn);
 
             // 宽度跟着内容走：长设备名不会被裁，100% 也不会把整行挤歪
