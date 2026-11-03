@@ -2,8 +2,14 @@
 setlocal
 set "HERE=%~dp0"
 
-rem 版本号：第一个参数，缺省为 v1.0.0
-if "%~1"=="" (set "VER=v1.0.0") else (set "VER=%~1")
+rem 版本号必须传：package.bat v1.0.1（避免默认值把新版本打成旧号）
+if "%~1"=="" (
+  echo.
+  echo Usage: package.bat v1.0.1
+  echo.
+  exit /b 1
+)
+set "VER=%~1"
 
 set "DIST=%HERE%dist\BatteryMonitor"
 set "ZIP=%HERE%dist\BatteryMonitor-%VER%.zip"

@@ -39,7 +39,7 @@ package.bat v1.1.0
 
 产物：`dist\BatteryMonitor-v1.1.0.zip`
 
-> 不传参数会用默认值 `v1.0.0`——所以这一步别偷懒，一定要带上版本号。
+> 版本号必须显式传入，漏了 `package.bat` 会直接报错退出（以前默认 `v1.0.0`，容易把新版本打成旧号）。
 
 ### 4. 提交并打标签
 
@@ -87,10 +87,10 @@ git push origin :refs/tags/v1.1.0   # 删远端
 
 | 位置 | 是否需手动改 |
 |---|---|
-| `package.bat` 的默认值 | 否（用参数传） |
+| `package.bat` | 否（参数必填，脚本里没有版本号） |
 | `CHANGELOG.md` | **是** |
 | Git tag | 是（第 4 步） |
 | Release 标题 | 是（第 5 步） |
-| `README.md` | 否（徽章自动读 tag） |
+| `README.md` | 否（徽章自动读 tag，打包产物名用 `<版本>` 占位） |
 
 只有 `CHANGELOG.md` 是硬编码的，其余都从 tag 派生或走参数。
