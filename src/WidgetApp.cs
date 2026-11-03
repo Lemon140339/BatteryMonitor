@@ -189,8 +189,8 @@ namespace BatteryMonitor
                 return;
             }
 
-            _widget.RaiseTopmost();
-
+            // 先看「此刻是否被压住」，再往上顶。
+            // 顺序反过来的话，检查永远发生在我们自己顶完之后，测不到真实的竞争结果。
             string offender;
             if (_widget.IsCovered(out offender))
             {
@@ -207,6 +207,8 @@ namespace BatteryMonitor
                 _lastOffender = null;
                 DebugLog.Write("悬浮层在最前");
             }
+
+            _widget.RaiseTopmost();
         }
 
         void OnModeRequested(DisplayMode mode)
