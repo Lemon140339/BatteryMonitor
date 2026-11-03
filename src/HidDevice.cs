@@ -44,13 +44,16 @@ namespace BatteryMonitor
         static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr sa, uint disp, uint flags, IntPtr templ);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        static extern bool ReadFile(IntPtr h, byte[] buf, int n, ref int read, ref OVERLAPPED ov);
+        static extern bool ReadFile(IntPtr h, byte[] buf, int n, IntPtr read, ref OVERLAPPED ov);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        static extern bool WriteFile(IntPtr h, byte[] buf, int n, ref int written, ref OVERLAPPED ov);
+        static extern bool WriteFile(IntPtr h, byte[] buf, int n, IntPtr written, ref OVERLAPPED ov);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         static extern bool GetOverlappedResult(IntPtr h, ref OVERLAPPED ov, ref int n, bool wait);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool CancelIoEx(IntPtr h, ref OVERLAPPED ov);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         static extern IntPtr CreateEvent(IntPtr sa, bool manual, bool initial, IntPtr name);
@@ -68,6 +71,7 @@ namespace BatteryMonitor
         const uint OPEN_EXISTING = 3;
         const uint FILE_FLAG_OVERLAPPED = 0x40000000;
         const int ERROR_IO_PENDING = 997;
+        const int WAIT_OBJECT_0 = 0;
 
         IntPtr _handle = new IntPtr(-1);
 
@@ -94,7 +98,8 @@ namespace BatteryMonitor
                     IntPtr buf = Marshal.AllocHGlobal(need);
                     try
                     {
-                        Marshal.WriteInt32(buf, 8);
+                        // SP_DEVICE_INTERFACE_DETAIL_DATA.cbSize：64 位是 8，32 位是 6
+                        Marshal.WriteInt32(buf, IntPtr.Size == 8 ? 8 : 6);
                         int got = 0;
                         if (!SetupDiGetDeviceInterfaceDetail(hdev, ref did, buf, need, ref got, IntPtr.Zero)) continue;
                         string path = Marshal.PtrToStringUni(new IntPtr(buf.ToInt64() + 4));
@@ -129,18 +134,18 @@ namespace BatteryMonitor
         {
             if (!IsOpen) return -1;
             IntPtr ev = CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
+            if (ev == IntPtr.Zero) return -1;
             try
             {
                 var ov = new OVERLAPPED();
                 ov.hEvent = ev;
-                int n = 0;
-                if (!ReadFile(_handle, buf, buf.Length, ref n, ref ov))
+                bool pending = false;
+                if (!ReadFile(_handle, buf, buf.Length, IntPtr.Zero, ref ov))
                 {
                     if (Marshal.GetLastWin32Error() != ERROR_IO_PENDING) return -1;
-                    if (WaitForSingleObject(ev, timeoutMs) != 0) return -1;
-                    if (!GetOverlappedResult(_handle, ref ov, ref n, false)) return -1;
+                    pending = true;
                 }
-                return n;
+                return Finish(ev, ref ov, pending, timeoutMs);
             }
             finally { CloseHandle(ev); }
         }
@@ -149,20 +154,42 @@ namespace BatteryMonitor
         {
             if (!IsOpen) return false;
             IntPtr ev = CreateEvent(IntPtr.Zero, true, false, IntPtr.Zero);
+            if (ev == IntPtr.Zero) return false;
             try
             {
                 var ov = new OVERLAPPED();
                 ov.hEvent = ev;
-                int n = 0;
-                if (!WriteFile(_handle, buf, buf.Length, ref n, ref ov))
+                bool pending = false;
+                if (!WriteFile(_handle, buf, buf.Length, IntPtr.Zero, ref ov))
                 {
                     if (Marshal.GetLastWin32Error() != ERROR_IO_PENDING) return false;
-                    if (WaitForSingleObject(ev, timeoutMs) != 0) return false;
-                    if (!GetOverlappedResult(_handle, ref ov, ref n, false)) return false;
+                    pending = true;
                 }
-                return true;
+                return Finish(ev, ref ov, pending, timeoutMs) >= 0;
             }
             finally { CloseHandle(ev); }
+        }
+
+        /// <summary>
+        /// 收尾这一笔 overlapped IO，返回传输字节数（失败 -1）。
+        /// 超时后必须先 CancelIoEx 再等它真正结束：否则内核还会往这块栈上的
+        /// OVERLAPPED 写结果，而调用方已经往下走了。
+        /// </summary>
+        int Finish(IntPtr ev, ref OVERLAPPED ov, bool pending, int timeoutMs)
+        {
+            if (pending)
+            {
+                if (WaitForSingleObject(ev, timeoutMs) != WAIT_OBJECT_0)
+                {
+                    int ignored = 0;
+                    CancelIoEx(_handle, ref ov);
+                    GetOverlappedResult(_handle, ref ov, ref ignored, true);
+                    return -1;
+                }
+            }
+            int n = 0;
+            if (!GetOverlappedResult(_handle, ref ov, ref n, false)) return -1;
+            return n;
         }
 
         public void Dispose()

@@ -35,9 +35,9 @@
     },
     "battery": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 255,
-      "description": "电量所在字节的下标（从 0 开始）"
+      "description": "电量所在字节的下标（从 0 开始；第一个字节写 0）"
     },
     "readLength": {
       "type": "integer",

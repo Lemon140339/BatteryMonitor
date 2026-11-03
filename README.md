@@ -16,7 +16,7 @@
 
 - **透明文字层** —— 屏幕右上角，背景完全透明，鼠标穿透，不影响任何点击
 - **配置驱动** —— 设备协议写在 `devices/*.json`，新增设备不用改代码
-- **单文件 exe** —— 约 25 KB，无第三方依赖（只需 .NET Framework 4.x）
+- **单文件 exe** —— 不到 30 KB，无第三方依赖（只需 .NET Framework 4.x）
 - **只读** —— 不写设备、不改设置，仅做查询与监听
 
 ## 显示效果
@@ -28,6 +28,8 @@
 
 - 设备名按电量变色：绿 >50% / 黄 20–50% / 红 <20%
 - 百分比为浅白色，带淡黑描边，浅色壁纸下也清晰
+- 设备名与百分比各占一列、右边缘对齐：`100%` 和 `7%` 都不会把设备名挤歪
+- 宽度按内容自适应，设备名多长都不会被裁
 - 固定右上角、置顶、不可拖动、鼠标穿透
 
 ## 快速开始
@@ -111,6 +113,7 @@ src/
   Profile.cs        设备描述模型 + JSON 加载
   HidDevice.cs      通用 HID 打开/读写
   DeviceWorker.cs   按 profile 驱动设备（被动 / 查询）
+  WidgetRender.cs   排版与绘制（列对齐、宽度自适应，可离屏渲染）
   WidgetForm.cs     透明文字层
   DebugLog.cs       --log 支持
   Program.cs        入口
@@ -128,15 +131,24 @@ uninstall-autostart.bat   取消开机自启
 ## 已知限制
 
 - 键盘休眠时会读不到，保留上次数值；按键后自动恢复
+  （连续 5 分钟都读不到才退回 `--`，避免旧值一直冒充实时值）
 - 查询类设备默认 30 秒轮询一次
+- 暂无托盘图标：这是权限妥协，不是设计约束（见 [docs/DESIGN.md](docs/DESIGN.md)）
 - 仅 Windows（依赖 setupapi / user32）
 - 需要 .NET Framework 4.x（Windows 10/11 自带）
+
+## 路线图
+
+- `v1.0.x`：修 bug、稳定性
+- 下一步：尝试**托盘图标版**。`Shell_NotifyIcon` 在受权限限制的桌面外壳下会失败，
+  所以第一版先做悬浮层；托盘版落地后，悬浮层保留为降级方案
+- 不做：灯光控制、按键重映射、跨平台（理由见 [docs/DESIGN.md](docs/DESIGN.md)）
 
 ## 更多文档
 
 | 文档 | 内容 |
 |---|---|
-| [docs/DESIGN.md](docs/DESIGN.md) | 设计取舍：为什么是纯 HID、为什么不用托盘、为什么锁 C# 5 |
+| [docs/DESIGN.md](docs/DESIGN.md) | 设计取舍：为什么是纯 HID、为什么先做悬浮层、为什么锁 C# 5 |
 | [docs/ADD_DEVICE.md](docs/ADD_DEVICE.md) | 适配新设备的完整流程 |
 | [RELEASING.md](RELEASING.md) | 发版清单 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南（含 C# 5 语法约束） |
@@ -167,7 +179,7 @@ in the top-right corner of the screen.
 - **Direct HID access** — no vendor drivers, no background services
 - **Config-driven** — device protocols live in `devices/*.json`; supporting a new
   device is a JSON edit, not a code change
-- **Single ~25 KB exe** — only needs .NET Framework 4.x
+- **Single ~28 KB exe** — only needs .NET Framework 4.x
 - **Read-only** — it never writes to the device
 
 Build with `build.bat`, package a release with `package.bat`.

@@ -40,7 +40,7 @@ namespace BatteryMonitor
         public string mode { get; set; }         // passive | query
         public int readLength { get; set; }      // passive 读取长度
         public Dictionary<string, string> match { get; set; }  // passive 帧特征
-        public int battery { get; set; }         // 电量字节下标
+        public int? battery { get; set; }        // 电量字节下标（0 合法，用可空类型区分"没填"）
         public QuerySpec query { get; set; }
         public ResponseSpec response { get; set; }
         public int pollIntervalMs { get; set; }  // query 模式轮询间隔
@@ -138,15 +138,17 @@ namespace BatteryMonitor
             if (!passive && !query)
                 problems.Add(tag + "mode 只能是 \"passive\" 或 \"query\"（当前：" + p.mode + "）");
 
-            if (p.battery <= 0)
-                problems.Add(tag + "battery 未设置或为 0，请填电量所在的字节下标（从 0 开始）");
+            if (!p.battery.HasValue)
+                problems.Add(tag + "缺少 battery：请填电量所在的字节下标（从 0 开始，第一个字节写 0）");
+            else if (p.battery.Value < 0)
+                problems.Add(tag + "battery 不能为负数：下标从 0 开始，第一个字节写 0（当前：" + p.battery.Value + "）");
 
             if (passive)
             {
                 if (p.readLength <= 0)
                     problems.Add(tag + "被动模式必须设置 readLength（每次读取的字节数）");
-                if (p.battery >= p.readLength && p.readLength > 0)
-                    problems.Add(tag + "battery(" + p.battery + ") 超出了 readLength(" + p.readLength + ") 的范围");
+                if (p.battery.HasValue && p.readLength > 0 && p.battery.Value >= p.readLength)
+                    problems.Add(tag + "battery(" + p.battery.Value + ") 超出了 readLength(" + p.readLength + ") 的范围");
                 if (p.match != null)
                 {
                     foreach (var kv in p.match)
@@ -171,8 +173,8 @@ namespace BatteryMonitor
                     problems.Add(tag + "query 里既没有 set 也没有 checksum，等于发一帧全 0，多半不对");
                 if (p.response == null || p.response.length <= 0)
                     problems.Add(tag + "查询模式必须提供 response.length（期望回复长度）");
-                else if (p.battery >= p.response.length)
-                    problems.Add(tag + "battery(" + p.battery + ") 超出了 response.length(" + p.response.length + ") 的范围");
+                else if (p.battery.HasValue && p.battery.Value >= p.response.length)
+                    problems.Add(tag + "battery(" + p.battery.Value + ") 超出了 response.length(" + p.response.length + ") 的范围");
             }
 
             if (p.pollIntervalMs <= 0) p.pollIntervalMs = 30000;

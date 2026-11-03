@@ -9,9 +9,16 @@ namespace BatteryMonitor
         readonly DeviceProfile _p;
         readonly object _lock = new object();
         int _percent = -1;
+        DateTime _lastOk;
+
+        /// <summary>多久没有成功读到，就认为旧值已经不可信（设备休眠是常态，短时间保留旧值）。</summary>
+        static readonly TimeSpan StaleLimit = TimeSpan.FromMinutes(5);
 
         public DeviceProfile Profile { get { return _p; } }
         public string Name { get { return _p.name; } }
+
+        /// <summary>电量字节下标；配置缺失时返回 -1（此时不应取数）。</summary>
+        int BatteryIndex { get { return _p.battery.HasValue ? _p.battery.Value : -1; } }
 
         public int Percent
         {
@@ -29,6 +36,7 @@ namespace BatteryMonitor
             {
                 changed = v != _percent;
                 _percent = v;
+                if (v >= 0) _lastOk = DateTime.UtcNow;
             }
             if (changed)
             {
@@ -36,6 +44,21 @@ namespace BatteryMonitor
                 var h = Updated;
                 if (h != null) { try { h(this); } catch { } }
             }
+        }
+
+        /// <summary>
+        /// 一次读取失败。设备休眠、按键才醒是常态，这时保留上一次的数字，
+        /// 免得每秒闪成 --；但超过 StaleLimit 还是没有成功读取，就把数字撤下来，
+        /// 不让一个旧值一直冒充实时值。
+        /// </summary>
+        void MarkFailed()
+        {
+            bool stale;
+            lock (_lock)
+            {
+                stale = _percent < 0 || _lastOk == DateTime.MinValue || DateTime.UtcNow - _lastOk > StaleLimit;
+            }
+            if (stale) Set(-1);
         }
 
         public void Start()
@@ -64,25 +87,27 @@ namespace BatteryMonitor
                     if (dev == null)
                     {
                         dev = HidDevice.Open(_p.vid, _p.pid, _p.iface);
-                        if (dev == null) { Set(-1); Thread.Sleep(_p.retryDelayMs); continue; }
+                        if (dev == null) { MarkFailed(); Thread.Sleep(_p.retryDelayMs); continue; }
                     }
 
                     int len = _p.readLength > 0 ? _p.readLength : 64;
                     var buf = new byte[len];
                     int n = dev.Read(buf, 4000);
 
-                    if (n < 0)
+                    if (n <= 0)
                     {
+                        // 0 字节也算失败：否则这里会立刻重读，变成忙循环空转 CPU
                         dev.Dispose();
                         dev = null;
-                        Set(-1);
+                        MarkFailed();
                         Thread.Sleep(500);
                         continue;
                     }
                     if (n != len) continue;
                     if (!Matches(buf)) continue;
 
-                    int v = _p.battery >= 0 && _p.battery < n ? buf[_p.battery] : -1;
+                    int idx = BatteryIndex;
+                    int v = idx >= 0 && idx < n ? buf[idx] : -1;
                     if (v < 0 || v > 100) continue;
                     Set(v);
                 }
@@ -119,7 +144,7 @@ namespace BatteryMonitor
                 }
                 else
                 {
-                    Set(-1);
+                    MarkFailed();
                     Thread.Sleep(_p.retryDelayMs);
                 }
             }
@@ -144,7 +169,8 @@ namespace BatteryMonitor
                 if (_p.response != null && _p.response.checksum != null)
                     if (!Verify(resp, _p.response.checksum)) return -1;
 
-                int v = _p.battery >= 0 && _p.battery < n ? resp[_p.battery] : -1;
+                int idx = BatteryIndex;
+                int v = idx >= 0 && idx < n ? resp[idx] : -1;
                 if (v < 0 || v > 100) return -1;
                 return v;
             }

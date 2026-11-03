@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Text;
+using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace BatteryMonitor
 {
-    /// <summary>右上角透明文字层，按设备数量自动排版。</summary>
+    /// <summary>右上角透明文字层：分层窗口 + 鼠标穿透，尺寸随内容自适应。</summary>
     public class WidgetForm : Form
     {
         [StructLayout(LayoutKind.Sequential)]
@@ -31,10 +31,11 @@ namespace BatteryMonitor
         const byte AC_SRC_ALPHA = 1;
         const int ULW_ALPHA = 2;
 
+        const int ScreenRightMargin = 12;
+        const int ScreenTopMargin = 12;
+
         readonly List<DeviceWorker> _workers;
         readonly List<string> _problems;
-        readonly int _width = 170;
-        readonly int _height;
         System.Windows.Forms.Timer _timer;
 
         public WidgetForm(List<DeviceWorker> workers, List<string> problems)
@@ -42,17 +43,11 @@ namespace BatteryMonitor
             _workers = workers ?? new List<DeviceWorker>();
             _problems = problems ?? new List<string>();
 
-            int rows = _workers.Count > 0 ? _workers.Count : 1;
-            if (_problems.Count > 0) rows++;
-            _height = 12 + rows * 24;
-
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
-            Size = new Size(_width, _height);
-            Location = new Point(Screen.PrimaryScreen.Bounds.Right - _width - 12,
-                                 Screen.PrimaryScreen.Bounds.Top + 12);
+            Size = new Size(170, 30);
 
             _timer = new System.Windows.Forms.Timer();
             _timer.Interval = 1000;
@@ -79,88 +74,47 @@ namespace BatteryMonitor
             Render();
         }
 
-        static Color ColorOf(int pct)
+        List<WidgetRow> BuildRows()
         {
-            if (pct < 0) return Color.Gray;
-            if (pct > 50) return Color.FromArgb(46, 204, 113);
-            if (pct > 20) return Color.FromArgb(241, 196, 15);
-            return Color.FromArgb(231, 76, 60);
+            var rows = new List<WidgetRow>();
+            if (_workers.Count == 0)
+            {
+                rows.Add(new WidgetRow("无设备配置", -1, "devices/ 为空"));
+                return rows;
+            }
+            foreach (var w in _workers) rows.Add(new WidgetRow(w.Name, w.Percent, null));
+            return rows;
+        }
+
+        string WarnText()
+        {
+            return _problems.Count > 0 ? "配置有误 " + _problems.Count + " 项" : null;
         }
 
         void Render()
         {
             if (!IsHandleCreated) return;
-            using (var bmp = new Bitmap(_width, _height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+
+            var rows = BuildRows();
+            string warn = WarnText();
+            var layout = WidgetRender.Measure(rows, warn);
+
+            // 宽度跟着内容走：长设备名不会被裁，100% 也不会把整行挤歪
+            if (Size.Width != layout.Width || Size.Height != layout.Height)
+                Size = new Size(layout.Width, layout.Height);
+
+            var target = new Point(Screen.PrimaryScreen.Bounds.Right - layout.Width - ScreenRightMargin,
+                                   Screen.PrimaryScreen.Bounds.Top + ScreenTopMargin);
+            if (Location != target) Location = target;
+
+            using (var bmp = new Bitmap(layout.Width, layout.Height, PixelFormat.Format32bppArgb))
             {
                 using (var g = Graphics.FromImage(bmp))
                 {
                     g.Clear(Color.Transparent);
-                    g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-
-                    int y = 6;
-                    if (_workers.Count == 0)
-                    {
-                        DrawRow(g, y, "无设备配置", -1, "devices/ 为空");
-                        y += 24;
-                    }
-                    else
-                    {
-                        foreach (var w in _workers)
-                        {
-                            DrawRow(g, y, w.Name, w.Percent, null);
-                            y += 24;
-                        }
-                    }
-
-                    if (_problems.Count > 0)
-                    {
-                        DrawWarn(g, y, "配置有误 " + _problems.Count + " 项");
-                    }
+                    WidgetRender.Draw(g, rows, warn, layout);
                 }
                 Apply(bmp);
-            }
-        }
-
-        void DrawRow(Graphics g, int y, string name, int pct, string note)
-        {
-            Color c = ColorOf(pct);
-            string num = note ?? (pct >= 0 ? pct + "%" : "--");
-
-            using (var f = new Font("Microsoft YaHei", 10.5f, FontStyle.Bold))
-            {
-                var nw = g.MeasureString(name, f);
-                var vw = g.MeasureString(num, f);
-                float xNum = _width - 8 - vw.Width;
-                float xName = xNum - 8 - nw.Width;
-
-                using (var shadow = new SolidBrush(Color.FromArgb(150, 0, 0, 0)))
-                {
-                    g.DrawString(name, f, shadow, xName + 1.2f, y + 1.2f);
-                    g.DrawString(num, f, shadow, xNum + 1.2f, y + 1.2f);
-                }
-                using (var bn = new SolidBrush(Color.FromArgb(248, 248, 248)))
-                {
-                    g.DrawString(num, f, bn, xNum, y);
-                    g.DrawString(num, f, bn, xNum + 0.45f, y);
-                }
-                using (var bc = new SolidBrush(c))
-                {
-                    g.DrawString(name, f, bc, xName, y);
-                    g.DrawString(name, f, bc, xName + 0.45f, y);
-                }
-            }
-        }
-
-        void DrawWarn(Graphics g, int y, string text)
-        {
-            using (var f = new Font("Microsoft YaHei", 9f, FontStyle.Bold))
-            {
-                float w = g.MeasureString(text, f).Width;
-                float x = _width - 8 - w;
-                using (var shadow = new SolidBrush(Color.FromArgb(150, 0, 0, 0)))
-                    g.DrawString(text, f, shadow, x + 1.2f, y + 1.2f);
-                using (var b = new SolidBrush(Color.FromArgb(255, 120, 90)))
-                    g.DrawString(text, f, b, x, y);
             }
         }
 

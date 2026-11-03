@@ -14,6 +14,9 @@ battery.log
 *_baseline/
 *_backup/
 
+# 本地验证用的临时产物
+.tmp-*/
+
 # 编辑器
 .vs/
 .vscode/
