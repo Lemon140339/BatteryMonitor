@@ -22,37 +22,127 @@ namespace BatteryMonitor
 
     /// <summary>
     /// 托盘图标：代码画的简约电池（按最低电量着色）+ 悬停提示 + 右键菜单。
-    /// 注册失败（没提权时 Shell_NotifyIcon 返回 ACCESS_DENIED）不会崩，
-    /// 只是把 Available 置为 false，由上层退回悬浮层。
+    ///
+    /// 直接调 Shell_NotifyIcon，不用 WinForms 的 NotifyIcon ——
+    /// 后者在注册失败时**不抛异常**（我们踩过：图标根本没出现，
+    /// 但 Visible=true 一声不响，结果程序以为托盘可用、把悬浮层也藏了）。
+    /// 这里以 NIM_ADD 的返回值作为唯一真相。
     /// </summary>
     public sealed class TrayView : IDisposable
     {
         const int IconSize = 32;
         const int MaxTipLength = 63;
 
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct NOTIFYICONDATA
+        {
+            public int cbSize;
+            public IntPtr hWnd;
+            public uint uID;
+            public uint uFlags;
+            public uint uCallbackMessage;
+            public IntPtr hIcon;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szTip;
+            public uint dwState;
+            public uint dwStateMask;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string szInfo;
+            public uint uTimeoutOrVersion;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string szInfoTitle;
+            public uint dwInfoFlags;
+            public Guid guidItem;
+            public IntPtr hBalloonIcon;
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool Shell_NotifyIcon(uint msg, ref NOTIFYICONDATA data);
+
+        [DllImport("user32.dll")]
+        static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern uint RegisterWindowMessage(string name);
+
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool DestroyIcon(IntPtr hIcon);
 
-        readonly NotifyIcon _icon;
+        const uint NIM_ADD = 0;
+        const uint NIM_MODIFY = 1;
+        const uint NIM_DELETE = 2;
+        const uint NIF_MESSAGE = 0x1;
+        const uint NIF_ICON = 0x2;
+        const uint NIF_TIP = 0x4;
+        const int TrayCallbackMessage = 0x0400 + 42;
+        const int WM_RBUTTONUP = 0x0205;
+        const int WM_LBUTTONUP = 0x0202;
+        const uint WM_NULL = 0x0000;
+
+        /// <summary>托盘图标自己的消息窗口：只收托盘回调，不显示。</summary>
+        sealed class TrayHost : Form
+        {
+            public int CallbackMessage;
+            public int TaskbarCreatedMessage;
+            public Action<int> MouseMessage;
+            public Action TaskbarCreated;
+
+            public TrayHost()
+            {
+                ShowInTaskbar = false;
+                FormBorderStyle = FormBorderStyle.None;
+                StartPosition = FormStartPosition.Manual;
+                Bounds = new Rectangle(-32000, -32000, 1, 1);
+            }
+
+            protected override void WndProc(ref Message m)
+            {
+                if (m.Msg == CallbackMessage)
+                {
+                    var h = MouseMessage;
+                    if (h != null) h((int)m.LParam & 0xFFFF);
+                    return;
+                }
+                if (TaskbarCreatedMessage != 0 && m.Msg == TaskbarCreatedMessage)
+                {
+                    // explorer 重启后通知区会清空，重新加一次
+                    var h = TaskbarCreated;
+                    if (h != null) h();
+                    return;
+                }
+                base.WndProc(ref m);
+            }
+        }
+
+        readonly TrayHost _host;
         readonly ContextMenuStrip _menu;
         readonly List<ToolStripItem> _deviceItems = new List<ToolStripItem>();
         readonly ToolStripMenuItem _autoItem;
         readonly ToolStripMenuItem _alwaysItem;
         readonly ToolStripMenuItem _hiddenItem;
+        readonly uint _taskbarCreated;
 
         string[] _lastLines;
         int _lastPercent = int.MinValue;
-        Icon _current;
+        Icon _icon;
+        bool _added;
         bool _disposed;
+        readonly bool _quiet;
 
-        /// <summary>托盘是否真的注册成功（非提权时通常为 false）。</summary>
-        public bool Available { get; private set; }
+        /// <summary>托盘是否真的加进去了（NIM_ADD 返回 true 才算）。</summary>
+        public bool Available { get { return _added; } }
 
         public event Action<DisplayMode> ModeRequested;
         public event Action QuitRequested;
 
-        public TrayView()
+        public TrayView() : this(false)
         {
+        }
+
+        /// <param name="quiet">探测用：失败时不写日志，避免和真正那次重复。</param>
+        public TrayView(bool quiet)
+        {
+            _quiet = quiet;
             _menu = new ContextMenuStrip();
 
             _autoItem = MakeModeItem("自动：全屏时显示悬浮层", DisplayMode.Auto);
@@ -71,26 +161,48 @@ namespace BatteryMonitor
                 quit
             });
 
-            _icon = new NotifyIcon();
-            _icon.Icon = MakeIcon(-1);
-            _icon.Text = "BatteryMonitor";
-            _icon.ContextMenuStrip = _menu;
+            _host = new TrayHost();
+            _host.CallbackMessage = TrayCallbackMessage;
+            _host.MouseMessage = OnTrayMouse;
+
+            _taskbarCreated = RegisterWindowMessage("TaskbarCreated");
+            _host.TaskbarCreatedMessage = unchecked((int)_taskbarCreated);
+            _host.TaskbarCreated = delegate { if (!_disposed) AddIcon(); };
         }
 
-        /// <summary>尝试注册到通知区。失败不抛，只返回 false。</summary>
+        /// <summary>把图标注册进通知区。失败返回 false，不抛异常。</summary>
         public bool Attach()
         {
-            try
-            {
-                _icon.Visible = true;
-                Available = true;
-            }
-            catch (Exception ex)
-            {
-                Available = false;
-                DebugLog.Write("托盘注册失败：" + ex.Message);
-            }
-            return Available;
+            if (_disposed) return false;
+            AddIcon();
+            return _added;
+        }
+
+        void AddIcon()
+        {
+            if (_icon == null) _icon = MakeIcon(-1);
+
+            var data = BuildData();
+            data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+            data.szTip = Truncate("BatteryMonitor");
+
+            _added = Shell_NotifyIcon(NIM_ADD, ref data);
+            if (!_added && !_quiet)
+                DebugLog.Write("托盘注册失败（err=" + Marshal.GetLastWin32Error() + "），改用悬浮层");
+        }
+
+        NOTIFYICONDATA BuildData()
+        {
+            var data = new NOTIFYICONDATA();
+            data.cbSize = Marshal.SizeOf(typeof(NOTIFYICONDATA));
+            data.hWnd = _host.Handle;
+            data.uID = 1;
+            data.uCallbackMessage = TrayCallbackMessage;
+            data.hIcon = _icon == null ? IntPtr.Zero : _icon.Handle;
+            data.szTip = "BatteryMonitor";
+            data.szInfo = "";
+            data.szInfoTitle = "";
+            return data;
         }
 
         public void Update(IList<WidgetRow> rows, DisplayMode mode)
@@ -105,13 +217,39 @@ namespace BatteryMonitor
             {
                 _lastPercent = min;
                 Icon next = MakeIcon(min);
-                Icon old = _current;
-                _current = next;
-                if (Available) _icon.Icon = next;
+                Icon old = _icon;
+                _icon = next;
                 if (old != null) old.Dispose();
+
+                if (_added)
+                {
+                    var data = BuildData();
+                    data.uFlags = NIF_ICON;
+                    Shell_NotifyIcon(NIM_MODIFY, ref data);
+                }
             }
 
-            if (Available) _icon.Text = BuildTip(rows);
+            if (_added)
+            {
+                var tip = BuildData();
+                tip.uFlags = NIF_TIP;
+                tip.szTip = Truncate(BuildTip(rows));
+                Shell_NotifyIcon(NIM_MODIFY, ref tip);
+            }
+        }
+
+        void OnTrayMouse(int mouseMessage)
+        {
+            if (mouseMessage != WM_RBUTTONUP && mouseMessage != WM_LBUTTONUP) return;
+            ShowMenu();
+        }
+
+        void ShowMenu()
+        {
+            SetForegroundWindow(_host.Handle);
+            _menu.Show(Cursor.Position);
+            // 菜单关掉后把焦点还给原来的窗口，否则点别处菜单不消失
+            PostMessage(_host.Handle, WM_NULL, IntPtr.Zero, IntPtr.Zero);
         }
 
         void SetChecks(DisplayMode mode)
@@ -186,9 +324,13 @@ namespace BatteryMonitor
                     sb.Append("\r\n").Append(r.Name).Append(' ').Append(r.ValueText);
                 }
             }
-            string s = sb.ToString();
-            if (s.Length > MaxTipLength) s = s.Substring(0, MaxTipLength);
-            return s;
+            return sb.ToString();
+        }
+
+        static string Truncate(string text)
+        {
+            if (text == null) return "";
+            return text.Length > MaxTipLength ? text.Substring(0, MaxTipLength) : text;
         }
 
         // ---------------- 图标：一个电池轮廓，按电量着色并填充 ----------------
@@ -256,10 +398,21 @@ namespace BatteryMonitor
         {
             if (_disposed) return;
             _disposed = true;
-            try { _icon.Visible = false; } catch { }
-            _icon.Dispose();
+
+            if (_added)
+            {
+                try
+                {
+                    var data = BuildData();
+                    Shell_NotifyIcon(NIM_DELETE, ref data);
+                }
+                catch { }
+                _added = false;
+            }
+
+            try { _host.Dispose(); } catch { }
             _menu.Dispose();
-            if (_current != null) { _current.Dispose(); _current = null; }
+            if (_icon != null) { _icon.Dispose(); _icon = null; }
         }
     }
 }

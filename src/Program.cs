@@ -54,25 +54,15 @@ namespace BatteryMonitor
 
         /// <summary>
         /// 真往通知区注册一次再注销，判断当前权限能不能用托盘。
-        /// 比按“是不是管理员”猜可靠：同样是普通用户，有的机器能注册，有的会被 explorer 挡掉。
+        /// 必须用原生 Shell_NotifyIcon 的返回值判断：WinForms 的 NotifyIcon
+        /// 在注册失败时不抛异常，会把失败当成成功（我们踩过这个坑）。
         /// </summary>
         static bool CanUseTray()
         {
-            try
-            {
-                using (var probe = new NotifyIcon())
-                {
-                    probe.Icon = SystemIcons.Application;
-                    probe.Text = "BatteryMonitor";
-                    probe.Visible = true;
-                    probe.Visible = false;
-                }
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            var probe = new TrayView(true);
+            try { return probe.Attach(); }
+            catch { return false; }
+            finally { probe.Dispose(); }
         }
 
         static bool IsElevated()

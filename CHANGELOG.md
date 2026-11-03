@@ -22,6 +22,15 @@
 - 主界面改为 `ApplicationContext` 驱动：托盘与悬浮层并存，按策略切换
 - `WidgetForm` 不再自带 1 秒计时器，改由 `WidgetApp` 统一驱动
 
+### 修复
+
+- **托盘注册失败被当成成功**：WinForms 的 `NotifyIcon.Visible = true` 在
+  `Shell_NotifyIcon` 返回 `FALSE` 时既不抛异常也不报错，导致程序以为托盘可用、
+  连悬浮层也隐藏，结果是「托盘和悬浮层都看不到」。改用原生 `Shell_NotifyIcon`，
+  以返回值为准；注册失败时自动退化成一直显示悬浮层
+- 托盘探测提前建窗口导致 `SetCompatibleTextRenderingDefault` 抛
+  `InvalidOperationException`（启动即崩）——WinForms 初始化提到入口最前面
+
 ### 已知限制
 
 - 独占全屏（D3D exclusive）下分层窗口不参与合成，悬浮层看不到；
