@@ -94,7 +94,12 @@ namespace BatteryMonitor
                     + "（全屏=" + fullscreen + "，托盘=" + _tray.Available + "，模式=" + ModeText(_mode) + "）");
             }
 
-            if (show) _widget.RenderNow();
+            if (show)
+            {
+                // 每秒顶一次：全屏播放器自己是 topmost，激活后会盖在我们上面
+                _widget.RaiseTopmost();
+                _widget.RenderNow();
+            }
         }
 
         void OnModeRequested(DisplayMode mode)

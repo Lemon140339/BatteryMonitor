@@ -27,6 +27,16 @@ namespace BatteryMonitor
         static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst,
             ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+            int x, int y, int cx, int cy, uint flags);
+
+        static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        const uint SWP_NOSIZE = 0x0001;
+        const uint SWP_NOMOVE = 0x0002;
+        const uint SWP_NOACTIVATE = 0x0010;
+        const uint SWP_NOOWNERZORDER = 0x0200;
+
         const byte AC_SRC_OVER = 0;
         const byte AC_SRC_ALPHA = 1;
         const int ULW_ALPHA = 2;
@@ -72,6 +82,18 @@ namespace BatteryMonitor
         {
             base.OnVisibleChanged(e);
             if (Visible) RenderNow();
+        }
+
+        /// <summary>
+        /// 把自己顶回最上层。
+        /// 全屏视频播放器之类的窗口自己也是 topmost，它一激活就排在我们前面；
+        /// 我们的窗口又不能激活（会抢焦点），只能靠 SetWindowPos 把 Z 序顶回去。
+        /// </summary>
+        public void RaiseTopmost()
+        {
+            if (!IsHandleCreated || !Visible) return;
+            SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
         }
 
         /// <summary>由 WidgetApp 每秒调用；隐藏时不画，省掉无意义的合成。</summary>

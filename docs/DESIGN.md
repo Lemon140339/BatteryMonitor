@@ -68,6 +68,23 @@
 
 两者共用一个数据源，`WidgetApp` 每秒问一句「该显示谁」，窗口只是被动 Show/Hide。
 
+### 托盘图标：一台设备一个电池
+
+不合并成「一个电池代表整体最低电量」——那样看不出是哪台快没电了。
+`MakeIcon` 按设备顺序竖着画 N 个电池，各自着色、各自填充，跟悬浮层的行序一致。
+
+16×16 最多塞下 3 个；再多就退回单电池（取最差那台），明细交给 tooltip 和右键菜单。
+设备上限本来就是少数几台，这个退化可以接受。
+
+### 悬浮层为什么要每秒「顶」一次
+
+全屏视频播放器之类的窗口**自己也是 topmost**。它一激活就排到 topmost 组的最前面，
+于是我们的悬浮层被压在下面——表现就是「视频全屏时看不到，退出全屏的一瞬间又闪现」。
+
+我们的窗口不能激活（`WS_EX_NOACTIVATE`，否则会抢游戏/播放器的焦点），
+所以只能靠 `SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE)` 定期把 Z 序顶回去。
+`WidgetApp` 每帧在显示时调用 `WidgetForm.RaiseTopmost()`，最坏延迟一秒。
+
 ### 用原生 Shell_NotifyIcon，不用 WinForms 的 NotifyIcon
 
 `.NET` 的 `NotifyIcon.Visible = true` **不会把失败告诉你**：注册失败时它既不抛异常也不报错。

@@ -123,7 +123,7 @@ namespace BatteryMonitor
         readonly uint _taskbarCreated;
 
         string[] _lastLines;
-        int _lastPercent = int.MinValue;
+        string _lastSignature;
         Icon _icon;
         bool _added;
         bool _disposed;
@@ -180,7 +180,7 @@ namespace BatteryMonitor
 
         void AddIcon()
         {
-            if (_icon == null) _icon = MakeIcon(-1);
+            if (_icon == null) _icon = MakeIcon(null);
 
             var data = BuildData();
             data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
@@ -212,11 +212,12 @@ namespace BatteryMonitor
             UpdateDeviceItems(rows);
             SetChecks(mode);
 
-            int min = MinPercent(rows);
-            if (min != _lastPercent)
+            List<int> percents = PercentsOf(rows);
+            string signature = Signature(percents);
+            if (signature != _lastSignature)
             {
-                _lastPercent = min;
-                Icon next = MakeIcon(min);
+                _lastSignature = signature;
+                Icon next = MakeIcon(percents);
                 Icon old = _icon;
                 _icon = next;
                 if (old != null) old.Dispose();
@@ -300,17 +301,28 @@ namespace BatteryMonitor
             return true;
         }
 
-        static int MinPercent(IList<WidgetRow> rows)
+        /// <summary>按设备顺序取出电量，一台设备一个电池。</summary>
+        static List<int> PercentsOf(IList<WidgetRow> rows)
         {
-            int min = -1;
-            if (rows == null) return min;
+            var list = new List<int>();
+            if (rows == null) return list;
             foreach (var r in rows)
             {
-                if (r == null) continue;
-                if (r.Percent < 0) continue;
-                if (min < 0 || r.Percent < min) min = r.Percent;
+                if (r == null || string.IsNullOrEmpty(r.Name)) continue;
+                list.Add(r.Percent);
             }
-            return min;
+            return list;
+        }
+
+        static string Signature(List<int> percents)
+        {
+            var sb = new StringBuilder();
+            foreach (var p in percents)
+            {
+                if (sb.Length > 0) sb.Append('|');
+                sb.Append(p);
+            }
+            return sb.ToString();
         }
 
         static string BuildTip(IList<WidgetRow> rows)
@@ -333,10 +345,16 @@ namespace BatteryMonitor
             return text.Length > MaxTipLength ? text.Substring(0, MaxTipLength) : text;
         }
 
-        // ---------------- 图标：一个电池轮廓，按电量着色并填充 ----------------
+        // ---------------- 图标：每台设备一个电池，竖着排 ----------------
 
-        static Icon MakeIcon(int percent)
+        /// <summary>
+        /// 一台设备画一个电池（各自着色、各自填充），两台就上下摞两个。
+        /// 超过三个塞不进 16×16，退回「最低电量」的单电池，明细看 tooltip。
+        /// </summary>
+        static Icon MakeIcon(IList<int> percents)
         {
+            int count = percents == null ? 0 : percents.Count;
+
             using (var bmp = new Bitmap(IconSize, IconSize, PixelFormat.Format32bppArgb))
             {
                 using (var g = Graphics.FromImage(bmp))
@@ -345,25 +363,30 @@ namespace BatteryMonitor
                     g.SmoothingMode = SmoothingMode.AntiAlias;
                     g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-                    Color c = WidgetRender.ColorOf(percent);
-
-                    using (var body = Rounded(new RectangleF(2.5f, 7.5f, 21f, 17f), 4f))
-                    using (var pen = new Pen(c, 2.4f))
-                        g.DrawPath(pen, body);
-
-                    using (var cap = Rounded(new RectangleF(24.5f, 13f, 4.5f, 6f), 1.5f))
-                    using (var pen = new Pen(c, 1.6f))
-                        g.DrawPath(pen, cap);
-
-                    if (percent > 0)
+                    if (count == 0)
                     {
-                        float innerWidth = 14f;
-                        float fillWidth = innerWidth * Math.Min(percent, 100) / 100f;
-                        if (fillWidth < 2f) fillWidth = 2f;
-                        var rect = new RectangleF(5.5f, 10.5f, fillWidth, 11f);
-                        using (var fill = Rounded(rect, 2f))
-                        using (var brush = new SolidBrush(c))
-                            g.FillPath(brush, fill);
+                        DrawBattery(g, -1, new RectangleF(2.5f, 7.5f, 21f, 17f), 2.4f, 4f);
+                    }
+                    else if (count <= 3)
+                    {
+                        float slot = (float)IconSize / count;
+                        float stroke = count == 1 ? 2.4f : 1.7f;
+                        for (int i = 0; i < count; i++)
+                        {
+                            float bodyHeight = Math.Min(17f, slot - 5f);
+                            float top = i * slot + (slot - bodyHeight) / 2f;
+                            var body = new RectangleF(2.5f, top, 21f, bodyHeight);
+                            DrawBattery(g, percents[i], body, stroke, Math.Min(4f, bodyHeight / 3f));
+                        }
+                    }
+                    else
+                    {
+                        // 设备太多：只显示最差的那台
+                        int min = int.MaxValue;
+                        foreach (var p in percents)
+                            if (p >= 0 && p < min) min = p;
+                        if (min == int.MaxValue) min = -1;
+                        DrawBattery(g, min, new RectangleF(2.5f, 7.5f, 21f, 17f), 2.4f, 4f);
                     }
                 }
 
@@ -374,6 +397,35 @@ namespace BatteryMonitor
                         return (Icon)tmp.Clone();
                 }
                 finally { DestroyIcon(h); }
+            }
+        }
+
+        static void DrawBattery(Graphics g, int percent, RectangleF body, float stroke, float radius)
+        {
+            Color c = WidgetRender.ColorOf(percent);
+
+            using (var path = Rounded(body, radius))
+            using (var pen = new Pen(c, stroke))
+                g.DrawPath(pen, path);
+
+            // 正极凸起，高度跟着电池走，小电池上也不糊
+            float capHeight = Math.Max(3f, Math.Min(6f, body.Height * 0.35f));
+            var cap = new RectangleF(body.Right + 1f, body.Y + (body.Height - capHeight) / 2f, 4f, capHeight);
+            using (var path = Rounded(cap, 1.2f))
+            using (var pen = new Pen(c, Math.Max(1.1f, stroke * 0.7f)))
+                g.DrawPath(pen, path);
+
+            if (percent > 0)
+            {
+                float inset = stroke + 0.8f;
+                float innerWidth = body.Width - 2f * inset - 0.5f;
+                float fillWidth = innerWidth * Math.Min(percent, 100) / 100f;
+                if (fillWidth < 1.6f) fillWidth = 1.6f;
+                var inner = new RectangleF(body.X + inset, body.Y + inset,
+                                           fillWidth, body.Height - 2f * inset);
+                using (var fill = Rounded(inner, Math.Min(2f, radius - 1f)))
+                using (var brush = new SolidBrush(c))
+                    g.FillPath(brush, fill);
             }
         }
 
