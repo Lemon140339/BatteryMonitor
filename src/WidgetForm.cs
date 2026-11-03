@@ -143,6 +143,39 @@ namespace BatteryMonitor
         }
 
         /// <summary>
+        /// 自检：把自己那块区域从屏幕上抓回来，数接近白色的像素。
+        /// 结果 ~0 说明窗口其实没被合成出来（不是 Z 序，而是画面上根本没有我们）。
+        /// </summary>
+        public int CountOwnPixels(out int width, out int height)
+        {
+            width = 0;
+            height = 0;
+            if (!IsHandleCreated || !Visible) return -1;
+
+            RECT r;
+            if (!GetWindowRect(Handle, out r)) return -1;
+            width = r.Right - r.Left;
+            height = r.Bottom - r.Top;
+            if (width <= 0 || height <= 0) return -1;
+
+            using (var bmp = new Bitmap(width, height))
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.CopyFromScreen(r.Left, r.Top, 0, 0, new Size(width, height));
+                int count = 0;
+                for (int y = 0; y < height; y += 2)
+                {
+                    for (int x = 0; x < width; x += 2)
+                    {
+                        Color c = bmp.GetPixel(x, y);
+                        if (c.R > 230 && c.G > 230 && c.B > 230) count++;
+                    }
+                }
+                return count;
+            }
+        }
+
+        /// <summary>
         /// 紧挨在我们上面的那个窗口（Z 序）——诊断「到底谁压在上面」。
         /// 返回 null 表示我们就在最顶层。
         /// </summary>

@@ -47,11 +47,14 @@ namespace BatteryMonitor
         bool _lastCovered;
         string _lastOffender;
         string _lastNeighborAbove;
+        readonly bool _selfCheck;
+        int _selfCheckTicks;
 
-        public WidgetApp(IList<DeviceWorker> workers, IList<string> problems)
+        public WidgetApp(IList<DeviceWorker> workers, IList<string> problems, bool selfCheck)
         {
             _workers = workers ?? new List<DeviceWorker>();
             _problems = problems ?? new List<string>();
+            _selfCheck = selfCheck;
 
             _widget = new WidgetForm(_workers, _problems);
             _tray = new TrayView();
@@ -180,6 +183,15 @@ namespace BatteryMonitor
                     DebugLog.Write(above == null
                         ? "悬浮层上方没有窗口（已在最顶层）"
                         : "悬浮层上方：" + above);
+                }
+
+                // --selfcheck：每两秒从屏幕上抓自己那块，数白像素。
+                // 数字接近 0 说明窗口根本没合成出来，而不是被谁压住。
+                if (_selfCheck && (++_selfCheckTicks % 2) == 0)
+                {
+                    int w, h;
+                    int visible = _widget.CountOwnPixels(out w, out h);
+                    DebugLog.Write("自检：屏幕上的白像素=" + visible + "（区域 " + w + "x" + h + "）");
                 }
             }
             else if (_topTimer.Enabled)

@@ -46,7 +46,7 @@ namespace BatteryMonitor
             foreach (var p in profiles) workers.Add(new DeviceWorker(p));
             foreach (var w in workers) w.Start();
 
-            using (var app = new WidgetApp(workers, problems))
+            using (var app = new WidgetApp(workers, problems, HasFlag(args, "--selfcheck")))
                 Application.Run(app);
         }
 
