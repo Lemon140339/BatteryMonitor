@@ -82,8 +82,19 @@
 于是我们的悬浮层被压在下面——表现就是「视频全屏时看不到，退出全屏的一瞬间又闪现」。
 
 我们的窗口不能激活（`WS_EX_NOACTIVATE`，否则会抢游戏/播放器的焦点），
-所以只能靠 `SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE)` 定期把 Z 序顶回去。
-`WidgetApp` 每帧在显示时调用 `WidgetForm.RaiseTopmost()`，最坏延迟一秒。
+所以只能主动把 Z 序顶回去，具体做了三层：
+
+1. `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`：前台一变立刻重算，不等定时器；
+2. 显示期间另开一个 **200ms** 的计时器只做 `SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE)`——
+   有的播放器每帧都在给自己调 SetWindowPos，1 秒一次抢不过；
+3. 每秒做一次「我是不是被挡住了」的检查（沿 Z 序列举，找第一个完全罩住自己的可见窗口），
+   把对方的类名/标题写进 `--log`，用来定位到底是谁压在上面。
+
+### 悬浮层画在哪块屏
+
+以前固定画在主屏右上角。视频在副屏全屏时，悬浮层其实画到了另一块屏幕上，
+看起来就像「没显示」。现在 `FullscreenWatcher` 会给出全屏窗口所在的显示器矩形，
+悬浮层跟着它走（没有全屏窗口时回到主屏）。
 
 ### 用原生 Shell_NotifyIcon，不用 WinForms 的 NotifyIcon
 

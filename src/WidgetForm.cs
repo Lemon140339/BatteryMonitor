@@ -37,6 +37,17 @@ namespace BatteryMonitor
         const uint SWP_NOACTIVATE = 0x0010;
         const uint SWP_NOOWNERZORDER = 0x0200;
 
+        [StructLayout(LayoutKind.Sequential)]
+        struct RECT { public int Left, Top, Right, Bottom; }
+
+        [DllImport("user32.dll")] static extern IntPtr GetTopWindow(IntPtr h);
+        [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+
+        const uint GW_HWNDNEXT = 2;
+
         const byte AC_SRC_OVER = 0;
         const byte AC_SRC_ALPHA = 1;
         const int ULW_ALPHA = 2;
@@ -46,6 +57,9 @@ namespace BatteryMonitor
 
         readonly IList<DeviceWorker> _workers;
         readonly IList<string> _problems;
+
+        /// <summary>显示在哪块屏幕上：全屏窗口在哪块就画到哪块的右上角。</summary>
+        public Rectangle TargetScreen;
 
         public WidgetForm(IList<DeviceWorker> workers, IList<string> problems)
         {
@@ -57,6 +71,7 @@ namespace BatteryMonitor
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
             Size = new Size(170, 30);
+            TargetScreen = Screen.PrimaryScreen.Bounds;
         }
 
         protected override CreateParams CreateParams
@@ -109,8 +124,10 @@ namespace BatteryMonitor
             if (Size.Width != layout.Width || Size.Height != layout.Height)
                 Size = new Size(layout.Width, layout.Height);
 
-            var target = new Point(Screen.PrimaryScreen.Bounds.Right - layout.Width - ScreenRightMargin,
-                                   Screen.PrimaryScreen.Bounds.Top + ScreenTopMargin);
+            var screen = TargetScreen;
+            if (screen.Width <= 0) screen = Screen.PrimaryScreen.Bounds;
+            var target = new Point(screen.Right - layout.Width - ScreenRightMargin,
+                                   screen.Top + ScreenTopMargin);
             if (Location != target) Location = target;
 
             using (var bmp = new Bitmap(layout.Width, layout.Height, PixelFormat.Format32bppArgb))
@@ -122,6 +139,38 @@ namespace BatteryMonitor
                 }
                 Apply(bmp);
             }
+        }
+
+        /// <summary>
+        /// 自己是不是被别的窗口盖住了（诊断用）：沿 Z 序从最上面往下找，
+        /// 遇到第一个把自己完全罩住的可见窗口就算被挡，返回它的类名/标题。
+        /// </summary>
+        public bool IsCovered(out string offender)
+        {
+            offender = null;
+            if (!IsHandleCreated || !Visible) return false;
+
+            RECT mine;
+            if (!GetWindowRect(Handle, out mine)) return false;
+
+            IntPtr w = GetTopWindow(IntPtr.Zero);
+            int guard = 0;
+            while (w != IntPtr.Zero && w != Handle && guard++ < 500)
+            {
+                if (IsWindowVisible(w) && !IsIconic(w))
+                {
+                    RECT r;
+                    if (GetWindowRect(w, out r)
+                        && r.Left <= mine.Left && r.Top <= mine.Top
+                        && r.Right >= mine.Right && r.Bottom >= mine.Bottom)
+                    {
+                        offender = FullscreenWatcher.Describe(w);
+                        return true;
+                    }
+                }
+                w = GetWindow(w, GW_HWNDNEXT);
+            }
+            return false;
         }
 
         void Apply(Bitmap bmp)

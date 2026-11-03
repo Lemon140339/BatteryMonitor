@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace BatteryMonitor
@@ -14,14 +16,36 @@ namespace BatteryMonitor
     /// </summary>
     public sealed class WidgetApp : ApplicationContext
     {
+        delegate void WinEventDelegate(IntPtr hook, uint evt, IntPtr hwnd,
+            int idObject, int idChild, uint thread, uint time);
+
+        [DllImport("user32.dll")]
+        static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmod,
+            WinEventDelegate proc, uint pid, uint thread, uint flags);
+
+        [DllImport("user32.dll")]
+        static extern bool UnhookWinEvent(IntPtr hook);
+
+        const uint EVENT_SYSTEM_FOREGROUND = 3;
+        const uint WINEVENT_OUTOFCONTEXT = 0;
+        const uint WINEVENT_SKIPOWNPROCESS = 2;
+
         readonly IList<DeviceWorker> _workers;
         readonly IList<string> _problems;
         readonly WidgetForm _widget;
         readonly TrayView _tray;
         readonly Timer _timer;
+        readonly Timer _topTimer;
+        readonly WinEventDelegate _winEventProc;
+        readonly IntPtr _hook;
 
         DisplayMode _mode = DisplayMode.Auto;
         bool _overlayVisible;
+        bool _refreshing;
+        bool _disposed;
+        IntPtr _lastFullscreenWindow = IntPtr.Zero;
+        bool _lastCovered;
+        string _lastOffender;
 
         public WidgetApp(IList<DeviceWorker> workers, IList<string> problems)
         {
@@ -36,11 +60,29 @@ namespace BatteryMonitor
             bool trayOk = _tray.Attach();
             DebugLog.Write("启动：托盘=" + (trayOk ? "可用" : "不可用") + "，模式=" + ModeText(_mode));
 
+            // 前台窗口一变就重算，别等下一秒；定时器仍是兜底
+            _winEventProc = OnForegroundChanged;
+            _hook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero,
+                _winEventProc, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+
             _timer = new Timer();
             _timer.Interval = 1000;
             _timer.Tick += delegate { Refresh(); };
             _timer.Start();
 
+            // 全屏期间单独用高频计时器把 Z 序顶回去：
+            // 有的播放器每帧都在给自己 SetWindowPos，1 秒一次抢不过它
+            _topTimer = new Timer();
+            _topTimer.Interval = 200;
+            _topTimer.Tick += delegate { KeepOnTop(); };
+
+            Refresh();
+        }
+
+        void OnForegroundChanged(IntPtr hook, uint evt, IntPtr hwnd,
+            int idObject, int idChild, uint thread, uint time)
+        {
+            if (_disposed) return;
             Refresh();
         }
 
@@ -75,14 +117,43 @@ namespace BatteryMonitor
             return fullscreen;                        // Auto：全屏才浮出来
         }
 
-        // ---------------- 每秒一次：刷新数据、判断全屏、切换显示 ----------------
+        // ---------------- 每秒一次 / 前台变化时：刷新数据、判断全屏、切换显示 ----------------
 
         void Refresh()
+        {
+            // 前台变化回调可能和定时器撞在同一拍，简单起见直接重入保护
+            if (_refreshing || _disposed) return;
+            _refreshing = true;
+            try
+            {
+                RefreshCore();
+            }
+            finally { _refreshing = false; }
+        }
+
+        void RefreshCore()
         {
             var rows = BuildRows(_workers);
             _tray.Update(rows, _mode);
 
-            bool fullscreen = FullscreenWatcher.IsForegroundFullscreen();
+            IntPtr fullscreenWindow;
+            Rectangle fullscreenScreen;
+            bool fullscreen = FullscreenWatcher.TryGetForegroundFullscreen(out fullscreenWindow, out fullscreenScreen);
+
+            if (fullscreen && fullscreenWindow != _lastFullscreenWindow)
+            {
+                _lastFullscreenWindow = fullscreenWindow;
+                _widget.TargetScreen = fullscreenScreen;
+                DebugLog.Write("全屏窗口：" + FullscreenWatcher.Describe(fullscreenWindow)
+                    + " screen=" + fullscreenScreen.Width + "x" + fullscreenScreen.Height
+                    + " quns=" + FullscreenWatcher.NotificationState());
+            }
+            else if (!fullscreen && _lastFullscreenWindow != IntPtr.Zero)
+            {
+                _lastFullscreenWindow = IntPtr.Zero;
+                _widget.TargetScreen = Screen.PrimaryScreen.Bounds;
+            }
+
             bool show = ShouldShowOverlay(_tray.Available, _mode, fullscreen);
 
             if (show != _overlayVisible)
@@ -96,9 +167,45 @@ namespace BatteryMonitor
 
             if (show)
             {
-                // 每秒顶一次：全屏播放器自己是 topmost，激活后会盖在我们上面
                 _widget.RaiseTopmost();
                 _widget.RenderNow();
+                if (!_topTimer.Enabled) _topTimer.Start();
+            }
+            else if (_topTimer.Enabled)
+            {
+                _topTimer.Stop();
+            }
+        }
+
+        /// <summary>
+        /// 高频把悬浮层顶回最前，并在被挡住时记一次日志（不刷屏）。
+        /// 只在显示期间运行。
+        /// </summary>
+        void KeepOnTop()
+        {
+            if (_disposed || !_overlayVisible)
+            {
+                _topTimer.Stop();
+                return;
+            }
+
+            _widget.RaiseTopmost();
+
+            string offender;
+            if (_widget.IsCovered(out offender))
+            {
+                if (!_lastCovered || offender != _lastOffender)
+                {
+                    _lastCovered = true;
+                    _lastOffender = offender;
+                    DebugLog.Write("悬浮层被挡住：" + offender);
+                }
+            }
+            else if (_lastCovered)
+            {
+                _lastCovered = false;
+                _lastOffender = null;
+                DebugLog.Write("悬浮层在最前");
             }
         }
 
@@ -123,6 +230,7 @@ namespace BatteryMonitor
         {
             DebugLog.Write("退出");
             _timer.Stop();
+            _topTimer.Stop();
             ExitThread();
         }
 
@@ -130,7 +238,10 @@ namespace BatteryMonitor
         {
             if (disposing)
             {
+                _disposed = true;
+                try { if (_hook != IntPtr.Zero) UnhookWinEvent(_hook); } catch { }
                 try { _timer.Stop(); } catch { }
+                try { _topTimer.Stop(); } catch { }
                 try { _tray.Dispose(); } catch { }
                 try { _widget.Dispose(); } catch { }
             }
