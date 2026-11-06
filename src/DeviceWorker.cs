@@ -84,9 +84,20 @@ namespace BatteryMonitor
         /// <summary>依次尝试配置里的所有 PID（一个接收器家族可能列出多个接收器 PID）。</summary>
         HidDevice OpenAny()
         {
+            ushort page, usage;
+            bool byUsage = _p.TryGetUsage(out page, out usage);
             foreach (string pid in _p.EffectivePids())
             {
-                HidDevice dev = HidDevice.Open(_p.vid, pid, _p.iface);
+                HidDevice dev = null;
+                if (byUsage)
+                {
+                    string path = HidDevice.FindPathByUsage(_p.vid, pid, _p.iface, page, usage);
+                    if (path != null) dev = HidDevice.OpenPath(path);
+                }
+                else
+                {
+                    dev = HidDevice.Open(_p.vid, pid, _p.iface);
+                }
                 if (dev != null) return dev;
             }
             return null;
@@ -161,10 +172,52 @@ namespace BatteryMonitor
 
         void Loop()
         {
+            if (_p.IsHidpp2) { HidppLoop(); return; }
             if (string.Equals(_p.mode, "query", StringComparison.OrdinalIgnoreCase))
                 QueryLoop();
             else
                 PassiveLoop();
+        }
+
+        // ---------------- 罗技 HID++（多步协议，见 src/Hidpp.cs） ----------------
+
+        HidppSession _hidpp;
+
+        void HidppLoop()
+        {
+            while (true)
+            {
+                int v = HidppOnce();
+                if (v >= 0)
+                {
+                    Set(v);
+                    Thread.Sleep(Math.Max(5000, _p.pollIntervalMs));
+                }
+                else
+                {
+                    MarkFailed();
+                    if (_hidpp != null) { _hidpp.Dispose(); _hidpp = null; }
+                    Thread.Sleep(Math.Max(5000, _p.retryDelayMs));
+                }
+            }
+        }
+
+        int HidppOnce()
+        {
+            if (_hidpp == null) _hidpp = HidppSession.Open(_p);
+            if (_hidpp == null) return -1;
+
+            int pct;
+            bool charging, full;
+            if (!_hidpp.TryReadBattery(out pct, out charging, out full))
+            {
+                _hidpp.Dispose();
+                _hidpp = null;
+                return -1;
+            }
+            // 充电时 0x1000 常报 0%（未知），别把它当"电量耗尽"显示出去
+            if (pct <= 0 && charging) return -1;
+            return pct;
         }
 
         // ---------------- 被动读取 ----------------
@@ -266,62 +319,51 @@ namespace BatteryMonitor
 
             HidDevice opened = OpenAny();
             if (opened == null) return -1;
-            using (opened)
+            try
             {
-                var dev = opened;
+                byte[] frame = ProtocolCodec.BuildQuery(_p);
+                int attempts = _p.retries > 0 ? _p.retries : 1;
 
-                var frame = BuildQuery();
-                if (!dev.Write(frame, 1000)) return -1;
-
-                int len = _p.response != null && _p.response.length > 0 ? _p.response.length : frame.Length;
-                var resp = new byte[len];
-                int n = dev.Read(resp, 1500);
-                if (n != len) return -1;
-
-                if (_p.response != null && _p.response.checksum != null)
-                    if (!Verify(resp, _p.response.checksum)) return -1;
-
-                int idx = BatteryIndex;
-                int v = idx >= 0 && idx < n ? resp[idx] : -1;
-                if (v < 0 || v > 100) return -1;
-                return v;
-            }
-        }
-
-        byte[] BuildQuery()
-        {
-            var q = _p.query;
-            int len = q.length > 0 ? q.length : 32;
-            var f = new byte[len];
-            if (q.set != null)
-            {
-                foreach (var kv in q.set)
+                for (int i = 0; i < attempts; i++)
                 {
-                    int idx = DeviceProfile.ParseInt(kv.Key, -1);
-                    int val = DeviceProfile.ParseInt(kv.Value, 0);
-                    if (idx >= 0 && idx < len) f[idx] = (byte)val;
+                    if (!Send(opened, frame)) { Thread.Sleep(80); continue; }
+
+                    int len = _p.response != null && _p.response.length > 0 ? _p.response.length : frame.Length;
+                    var resp = new byte[len];
+                    int n = ReadReply(opened, resp, len);
+                    if (n != len) { Thread.Sleep(80); continue; }
+
+                    int pct;
+                    bool charging, full;
+                    if (!ProtocolCodec.Decode(_p, resp, out pct, out charging, out full)) continue;
+                    return pct;
                 }
+                return -1;
             }
-            if (q.checksum != null && string.Equals(q.checksum.type, "sum8", StringComparison.OrdinalIgnoreCase))
-                f[q.checksum.at] = Sum8(f, q.checksum);
-            return f;
+            finally { opened.Dispose(); }
         }
 
-        static byte Sum8(byte[] buf, CheckSpec spec)
+        /// <summary>发一帧。Feature 通道优先 HidD_SetFeature，失败再试 output 报告。</summary>
+        bool Send(HidDevice dev, byte[] frame)
         {
-            int from = spec.range != null && spec.range.Length > 0 ? spec.range[0] : 0;
-            int to = spec.range != null && spec.range.Length > 1 ? spec.range[1] : spec.at - 1;
-            int s = 0;
-            if (from < 0) from = 0;
-            if (to >= buf.Length) to = buf.Length - 1;
-            for (int i = from; i <= to; i++) s += buf[i];
-            return (byte)(s & 0xFF);
+            if (_p.IsFeatureIo)
+            {
+                if (dev.SetFeature(frame)) return true;
+                return dev.SetOutputReport(frame);
+            }
+            if (dev.Write(frame, 1000)) return true;
+            return dev.SetOutputReport(frame);
         }
 
-        static bool Verify(byte[] buf, CheckSpec spec)
+        /// <summary>收应答。Feature 通道要等设备把回报准备好（wakeDelayMs）。</summary>
+        int ReadReply(HidDevice dev, byte[] resp, int len)
         {
-            if (spec.at < 0 || spec.at >= buf.Length) return false;
-            return Sum8(buf, spec) == buf[spec.at];
+            if (_p.IsFeatureIo)
+            {
+                if (_p.wakeDelayMs > 0) Thread.Sleep(_p.wakeDelayMs);
+                return dev.GetFeature(resp) ? len : -1;
+            }
+            return dev.Read(resp, 1500);
         }
     }
 }

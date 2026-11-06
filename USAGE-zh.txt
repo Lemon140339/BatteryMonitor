@@ -71,6 +71,12 @@
   devices\                设备配置，删了会显示"无设备配置"
     beken-1d57.json       1D57 无线接收器家族（INPHIC IN10、Attack Shark X11 等 48 个型号）
     ky87.json             NDIY KY87
+    compx-atk.json        ATK 无线鼠标（Compx/Nordic 52840 家族）
+    compx-vxe.json        VXE / VGN 无线鼠标
+    compx-dareu.json      达尔优无线鼠标
+    compx-gwolves.json    G-Wolves 无线鼠标
+    mchose-a7pro.json     MCHOSE A7 Pro
+    logitech-hidpp.json   罗技 Lightspeed / Bolt / Unifying（一套实现覆盖所有型号）
     device.schema.json    编辑器补全用，程序会跳过
     manifest.json         配置清单（升级时用来清理旧配置）
   USAGE-zh.txt            本文件
@@ -193,10 +199,26 @@
   KY87  接收器 0C45:FEFE，接口 MI_03，主动查询 33 字节：
         00 20 01 00 ... <校验和> 00
         回复第 5 字节为电量，末字节为前 32 字节之和的低 8 位
+  Compx/Nordic 52840 家族（ATK 373B / VXE·VGN 3554 / 达尔优 260D / G-Wolves 33E4），
+  usage FF02/02，主动查询 17 字节：
+        08 04 00 ... 49     （整帧 17 字节之和恒为 0x55，所以尾字节固定 0x49）
+        回复第 7 字节为电量，第 8 字节非 0 表示有线/充电，第 9-10 字节为电压 mV
+        协议事实来自三个 MIT 项目：power-island、vxe-monitor、GearPower
+  MCHOSE A7 Pro（5253:1021），usage FF01，Feature 报告 0x11（65 字节）：
+        发送 11 + XOR0xFF(06 00 00 …)；回复同样整包 XOR 0xFF
+        解码后第 12 字节为电量、第 13 字节为充电标志
+        千万不要发 F4 55：那是配置档重载命令，会让 DPI 变掉
+  Logitech HID++ 2.0（046D 系列的 Lightspeed/Bolt/Unifying 接收器）：
+        运行时问 feature index，再读 0x1000（Battery Level Status）或 0x1004（Unified Battery）
+        一套实现覆盖所有型号，不需要逐型号配置；老的 HID++ 1.0 接收器不支持
 
 
 已知限制
 --------
+· 新增的 ATK / VXE·VGN / 达尔优 / G-Wolves / MCHOSE / 罗技 这几族协议是按公开协议事实实现的，
+  作者手上没有这些设备，尚未真机逐一验证；读数不对请用 --log 抓日志反馈
+· 罗技只支持 HID++ 2.0；一个接收器后挂多台设备时只显示第一台能读到电量的
+· 暂不支持 Razer、黑爵 AJAZZ、雷柏 VT9、MCHOSE 耳机
 · 键盘休眠时读到空值，保留上次数值；按几下键盘自动恢复
   （程序每 5 秒重试；连续 5 分钟都读不到才变成 --）
 · 键盘电量 30 秒刷新一次，鼠标实时（设备约每秒推送）

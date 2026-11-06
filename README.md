@@ -105,6 +105,16 @@ BatteryMonitor.exe --log
 |---|---|---|---|
 | 2.4G 无线鼠标（Beken 1D57 家族） | `1D57:FA60` / `FA62` / `FA65` | `col03` | 被动读 5 字节，按报文里的型号 ID 识别（INPHIC IN10、Attack Shark X11 等 48 个型号） |
 | KY87 | `0C45:FEFE` | `mi_03` | 查询 33 字节 |
+| ATK 无线鼠标 | `373B:1031` / `102E` / `11D9` / `11B6` / … | usage `FF02/02` | 查询 17 字节，命令 `08 04`，整帧和恒为 `0x55` |
+| VXE / VGN 无线鼠标 | `3554:F58A` / `F58C` / `F58E` / … | usage `FF02/02` | 同上（Compx/Nordic 52840 同协议） |
+| 达尔优无线鼠标 | `260D:1175` / `1193` / `1154` / `1196` | usage `FF02/02` | 同上 |
+| G-Wolves 无线鼠标 | `33E4:3854` / `4719` | usage `FF02/02` | 同上 |
+| MCHOSE A7 Pro | `5253:1021` / `0010` | usage `FF01` | Feature 报告 `0x11`，整包 XOR `0xFF`，电量在第 11 字节 |
+| 罗技 Lightspeed / Bolt / Unifying | `046D:C54D` / `C548` / `C52B` 等 | HID++ 2.0 | feature `0x1000` / `0x1004`，**一套实现覆盖所有型号**，不需要逐型号配置 |
+
+> 后四类协议按公开事实实现，**尚未在真机上逐一验证**（作者手上没有这些设备）。
+> 读数不对时请带 `--log` 生成的 `battery.log` 反馈，日志里能看到原始报文与失败原因。
+> 罗技这条线只支持 HID++ 2.0；老 HID++ 1.0 接收器（Nano 那代）会回 `0x8F` 错误帧，暂不支持。
 
 > IN10 也在上面的 1D57 家族里（型号 ID `0x93`），不再单独占一个配置文件；
 > 同一接收器换了鼠标会自动改名（同一时刻只显示最近有数据的那一只）。
@@ -143,9 +153,11 @@ package.bat v1.0.1
 src/
   Profile.cs          设备描述模型 + JSON 加载
   ConfigManifest.cs   读取 devices/manifest.json，清理旧版本遗留的配置
-  HidDevice.cs        通用 HID 打开/读写
+  HidDevice.cs        通用 HID 打开/读写；Feature 报告、usage 选择、报告描述符
+  Hidpp.cs            罗技 HID++ 2.0 会话（feature 发现、多设备索引、电量解析）
+  ProtocolCodec.cs    配置驱动的组帧/校验/异或解码（纯逻辑，可单测）
   HidPresence.cs      判断设备接口当前在不在（决定界面显示哪些设备）
-  DeviceWorker.cs     按 profile 驱动设备（被动 / 查询；型号识别）
+  DeviceWorker.cs     按 profile 驱动设备（被动 / 查询 / HID++；型号识别）
   WidgetRender.cs     排版与绘制（列对齐、宽度自适应，可离屏渲染）
   WidgetForm.cs       透明文字层（悬浮层）
   TrayView.cs         托盘图标（代码画的电池）+ 悬停提示 + 右键菜单
@@ -157,6 +169,9 @@ src/
 devices/
   beken-1d57.json     1D57 无线接收器家族（48 个型号 ID 共用一份配置）
   ky87.json           查询模式示例
+  compx-*.json        Compx/Nordic 52840 家族（ATK / VXE·VGN / 达尔优 / G-Wolves）
+  mchose-a7pro.json   MCHOSE Feature 报告 + 整包异或示例
+  logitech-hidpp.json 罗技 HID++ 2.0（只写身份，电量由代码读）
   device.schema.json  JSON Schema（编辑器自动补全）
   manifest.json       本版本配置清单（obsolete = 升级时要清理的旧文件）
 docs/
@@ -166,7 +181,7 @@ docs/
   tray.png            托盘图标样张
   social-preview.png  仓库社交预览图（在 GitHub 设置里上传）
 USAGE-zh.txt              中文使用说明
-test.bat                  逻辑单测（外壳窗口判定 / 配置模型 / 接口路径匹配）
+test.bat                  逻辑单测（外壳窗口判定 / 配置模型 / 协议编解码 / HID++ 帧）
 tests/
   ShellWindowRulesTest.cs
   ProfileModelTest.cs
@@ -181,7 +196,13 @@ uninstall-autostart.bat   取消开机自启
 - 界面只显示接收器当前插着的设备；设备休眠不会让行消失——判据是接收器接口在不在，
   不是最近有没有数据。拔掉接收器那一行立即消失
 - 同一接收器同时配了两只设备时，同一时刻只显示最近有数据的那一只（型号要连续 3 帧稳定才切换）
-- 查询类设备默认 30 秒轮询一次
+- 查询类设备默认 30 秒轮询一次；新增的国产 2.4G 与罗技默认 60 秒（每次查询会唤醒设备，别太勤）
+- **Compx / MCHOSE / 罗技这几族协议尚未在真机上逐一验证**（作者没有对应设备）：
+  ATK、VXE/VGN、达尔优、G-Wolves、MCHOSE A7 Pro、罗技 Lightspeed/Bolt/Unifying 属于"按公开协议事实实现"，
+  读数不对请带 `--log` 反馈
+- 罗技只支持 HID++ 2.0：老 HID++ 1.0 接收器（Nano 那代）不支持；一个接收器后挂多台设备时只显示第一台能读到电量的
+- 暂不支持：Razer（90 字节帧走 USB 控制传输，Windows 上要验证描述符是否声明对应 Feature 报告）、
+  黑爵 AJAZZ、雷柏 VT9、MCHOSE 耳机
 - **独占全屏（D3D exclusive）下看不到悬浮层**：游戏接管了屏幕合成，分层窗口画不上去；
   无边框窗口化全屏可以。这时只能靠托盘（它也被盖住，要切出来才看得到）
 - **Windows 11「媒体播放器」全屏时也一样看不到**：它走直通呈现（fullscreen optimization），
@@ -221,9 +242,19 @@ uninstall-autostart.bat   取消开机自启
 |---|---|---|
 | [attack-shark-x11-driver](https://github.com/HarukaYamamoto0/attack-shark-x11-driver) | Copyright (c) 2026 HarukaYamamoto0 | 型号 ID 表（`devices.ts`）、电量报文格式、充电态取值 |
 | [mouse-battery-tray](https://github.com/incconutwo/mouse-battery-tray) | Copyright (c) 2026 incconu_two | Beken 接收器读取方式、接收器 PID、10% 档换算 |
+| [InphicBatteryTray](https://github.com/Tan-TanZi/InphicBatteryTray) | Copyright (c) 2026 Tan-TanZi | 1D57 被动 5 字节报文的独立出处（`03 <类型> 40 <设备#> <电量>`）、INPHIC IN9 的 Feature 协议 |
+| [power-island](https://github.com/lingdiaoluo/power-island) | Copyright (c) 2026 lingdiaoluo | Compx/Nordic 52840 的 17 字节查询帧、电量/有线字节位置、usage 集合 |
+| [vxe-monitor](https://github.com/twinkle311/vxe-monitor) | Copyright (c) 2026 twinkle311 | Compx go 包帧格式与校验公式（`0x55 - (0x08 + Σ)`，解释了固定尾字节 `0x49`） |
+| [GearPower](https://github.com/XAVIER0229/GearPower) | Copyright (c) 2026 XAVIER0229 | Compx 家族的接收器 PID 集合、协议交叉核对 |
+| [mchose-2.4g-battery-tray](https://github.com/Sanye223/mchose-2.4g-battery-tray) | Copyright (c) 2026 Sanye223 | MCHOSE 的 `0x11` + 整包 XOR `0xFF` 协议、电量/充电字节位置、"不要发 `F4 55`"的真机结论 |
 
 本项目的实现是独立完成的，只使用了上述项目公开的协议事实，没有包含它们的代码；
 完整 MIT 许可文本见各自仓库的 `LICENSE`。
+
+罗技 HID++ 2.0 的协议事实参考了 [Solaar](https://github.com/pwr-Solaar/Solaar)（GPL-2.0）、
+[logiops](https://github.com/PixlOne/logiops)（GPL-3.0）与 Linux 内核的 `hid-logitech-hidpp.c`（GPL-2.0）。
+**只取事实**（feature 编号、报文布局、状态枚举），没有复制它们的代码、设备表或电压曲线；
+mV→% 曲线若后续实现将自行拟合并注明为经验值。GPL 与本项目的 MIT 不兼容，故不引入任何 GPL 文件。
 
 也感谢 [OpenMouse](https://github.com/OpenMouse-Project/openmouse)（AGPL-3.0）：
 它帮助我们交叉核对了 Beken 家族的型号表与报文语义。**没有复制它的代码或数据表**——

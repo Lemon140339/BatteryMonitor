@@ -1,0 +1,9 @@
+{
+  "$schema": "./device.schema.json",
+  "name": "Logitech 无线设备",
+  "vid": "046D",
+  "pids": ["C54D", "C539", "C545", "C53A", "C53F", "C541", "C547", "C548", "C52B", "C532"],
+  "protocol": "hidpp2",
+  "pollIntervalMs": 60000,
+  "retryDelayMs": 15000
+}

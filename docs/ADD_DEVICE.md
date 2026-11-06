@@ -185,6 +185,70 @@ Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Enum\HID' |
 }
 ```
 
+### 厂商 Feature 报告型
+
+有些设备（例如 MCHOSE）的厂商通道只认 Feature 报告，走中断端点读不到；而且整包是异或过的。
+两个开关就能表达：`io: "feature"` 和 `payloadXor`。
+
+```json
+{
+  "name": "MCHOSE A7 Pro",
+  "vid": "5253",
+  "pids": ["1021", "0010"],
+  "usage": "FF01/0000",
+  "mode": "query",
+  "io": "feature",
+  "battery": 11,
+  "minPercent": 1,
+  "charging": { "offset": 12, "values": ["0x01"] },
+  "payloadXor": "0xFF",
+  "wakeDelayMs": 150,
+  "query": { "length": 65, "set": { "0": "0x11", "1": "0x06" } },
+  "response": { "length": 65, "expect": { "0": "0x11" } },
+  "retries": 2
+}
+```
+
+- `payloadXor`：写帧时异或 `[1..end]`（报告 ID 不动），读帧时异或 `[2..end]`（保留报告 ID 和回显字节）。
+  固件版本不一致时程序会**先试异或、再试原始帧**，谁通过 `expect` 就用谁；
+- `io: "feature"`：写入用 `HidD_SetFeature`，读取用 `HidD_GetFeature`；
+- `wakeDelayMs`：写完等多久再读，Feature 通道常需要 100~200ms；
+- `minPercent`：低于它当无效包。MCHOSE 用 `0` 表示休眠/链路断开，所以填 `1`；
+- `expect`：应答特征。`{"0": "0x11"}` 表示"报告 ID 必须是 0x11"，防止把别的回包当电量。
+
+### 按 usage 选接口
+
+同一个接收器在 Windows 上会拆成好几个 HID 集合（鼠标、键盘、厂商自定义），
+路径里的 `colNN` 随固件变，写死 `iface` 很容易选错。能拿到 usage 时优先写 `usage`：
+
+```json
+"usage": "FF02/0002"
+```
+
+含义：usage 页 `0xFF02`、usage `0x0002`。写 `FF01/0000` 表示"只认 usage 页、usage 不限"。
+程序会打开每个候选接口读报告描述符（0 权限即可），按 usage 匹配；找不到时再退回 `iface`。
+
+### 罗技 HID++（`protocol: "hidpp2"`）
+
+罗技不是"字节表"协议：feature 索引要在运行时问设备，一个接收器后面还挂 1~6 台设备。
+所以这份配置只写身份，电量由代码里的 HID++ 会话读（`src/Hidpp.cs`）：
+
+```json
+{
+  "name": "Logitech 无线设备",
+  "vid": "046D",
+  "pids": ["C54D", "C539", "C545", "C53A", "C53F", "C541", "C547", "C548", "C52B", "C532"],
+  "protocol": "hidpp2",
+  "pollIntervalMs": 60000,
+  "retryDelayMs": 15000
+}
+```
+
+- 不用写 `battery` / `query` / `response`，写了会报配置错误；
+- 一套实现覆盖所有带 UnifiedBattery / Battery Level Status feature 的设备，
+  **不需要逐型号加配置**；`models` 里可以按 WPID 补显示名（不强求）；
+- 只支持 HID++ 2.0；老的 HID++ 1.0 接收器（Nano 那代）会回 `0x8F` 错误帧，本会话直接放弃。
+
 ---
 
 ## 7. 字段说明
@@ -195,8 +259,17 @@ Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Enum\HID' |
 | `vid` | 全部 | 四位十六进制，例如 `1D57` |
 | `pid` / `pids` | 全部 | 二选一：单型号写 `pid`（如 `"FA65"`）；一个接收器家族写 `pids` 数组（如 `["FA60","FA62","FA65"]`） |
 | `iface` | 全部 | 接口路径片段，用来区分同一设备的多个集合 |
+| `usage` | 全部 | 按 usage 选接口，写法 `"FF02/0002"`（usage 页 / usage）；比 `iface` 稳，推荐优先用 |
+| `protocol` | 全部 | 留空 = 字节表协议；`"hidpp2"` = 罗技 HID++（电量由代码读） |
+| `io` | query | `output`（默认，WriteFile）或 `feature`（HidD_SetFeature） |
+| `scale` | query | 电量倍率：原始值 × scale，默认 1（10% 档写 10）。passive 用 `models[].scale` |
+| `minPercent` | query | 有效下限，默认 0；有些协议拿 0 表示休眠/断链，填 1 更稳 |
+| `charging` | 全部 | 充电/有线标志：`{"offset": 7, "nonZero": true}` 或 `{"offset": 12, "values": ["0x01"]}` |
+| `payloadXor` | query | 整包异或掩码，如 `"0xFF"`：写帧异或 `[1..]`，读帧异或 `[2..]` |
+| `retries` | query | 单次查询重试次数，默认 2（休眠设备首包常不应答） |
+| `wakeDelayMs` | query | Feature 写后等待毫秒数，默认 120 |
 | `mode` | 全部 | `passive`（被动读）或 `query`（主动问） |
-| `battery` | 全部 | 电量字节的**下标**（从 0 开始；第一个字节就写 `0`，可以就是 0） |
+| `battery` | 除 hidpp2 | 电量字节的**下标**（从 0 开始；第一个字节就写 `0`，可以就是 0） |
 | `readLength` | passive | 每次读取的字节数，必须等于报告长度 |
 | `match` | passive | 帧特征，`{"下标": "期望值"}`，全部命中才算电量帧 |
 | `modelIndex` | passive | 报文里"型号 ID"的字节下标；配合 `models` 让一份配置识别多型号 |
@@ -205,19 +278,32 @@ Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Enum\HID' |
 | `query.set` | query | 固定字节，`{"下标": "值"}`，未列出的补 0 |
 | `query.checksum` | query | 发送帧的校验 |
 | `response.length` | query | 期望回复长度 |
+| `response.expect` | query | 应答特征 `{"下标": "值"}`，全部命中才认这一帧 |
 | `response.checksum` | query | 回复的校验（不填则不校验） |
 | `pollIntervalMs` | query | 轮询间隔，默认 30000 |
 | `retryDelayMs` | 全部 | 失败后的重试间隔，默认 5000 |
 
 ### 校验算法
 
-目前只支持 `sum8`：把 `range` 区间内的字节相加，取低 8 位，写到 `at` 位置。
+支持三种：
+
+| type | 含义 |
+|---|---|
+| `sum8`（默认） | `range` 区间字节相加，取低 8 位，写到 `at` |
+| `sumTo` | 让"区间和 + 校验字节"≡ `target`（mod 256）。写帧时算成补码，读帧时验总和 |
+| `none` | 不校验 |
 
 ```json
-"checksum": { "type": "sum8", "range": [0, 30], "at": 31 }
+"checksum": { "type": "sum8",   "range": [0, 30], "at": 31 }
+"checksum": { "type": "sumTo",  "target": "0x55", "range": [0, 15], "at": 16 }
 ```
 
-含义：把第 0 到第 30 字节相加，结果写入第 31 字节。
+`sumTo` 的例子是 Compx/Nordic 那类设备：整帧 17 字节之和恒等于 `0x55`，
+请求帧的最后一字节因此永远是 `0x49`。校验应答时可以省略 `at`，只写 `range`：
+
+```json
+"response": { "length": 17, "checksum": { "type": "sumTo", "target": "0x55", "range": [0, 16] } }
+```
 
 如果设备没有校验，整个 `checksum` 字段省略即可。
 

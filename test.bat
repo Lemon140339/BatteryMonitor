@@ -28,6 +28,8 @@ echo Running logic tests: profiles and models...
   "%HERE%src\HidDevice.cs" ^
   "%HERE%src\ConfigManifest.cs" ^
   "%HERE%src\DebugLog.cs" ^
+  "%HERE%src\ProtocolCodec.cs" ^
+  "%HERE%src\Hidpp.cs" ^
   "%HERE%tests\ProfileModelTest.cs" ^
   /r:System.Web.Extensions.dll
 if errorlevel 1 goto :buildfail

@@ -1,0 +1,23 @@
+{
+  "$schema": "./device.schema.json",
+  "name": "G-Wolves 无线鼠标",
+  "vid": "33E4",
+  "pids": ["3854", "4719"],
+  "usage": "FF02/0002",
+  "mode": "query",
+  "io": "output",
+  "battery": 6,
+  "charging": { "offset": 7, "nonZero": true },
+  "query": {
+    "length": 17,
+    "set": { "0": "0x08", "1": "0x04" },
+    "checksum": { "type": "sumTo", "target": "0x55", "range": [0, 15], "at": 16 }
+  },
+  "response": {
+    "length": 17,
+    "expect": { "0": "0x08", "1": "0x04" }
+  },
+  "retries": 3,
+  "pollIntervalMs": 60000,
+  "retryDelayMs": 10000
+}

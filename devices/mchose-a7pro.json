@@ -1,0 +1,25 @@
+{
+  "$schema": "./device.schema.json",
+  "name": "MCHOSE A7 Pro",
+  "vid": "5253",
+  "pids": ["1021", "0010"],
+  "usage": "FF01/0000",
+  "mode": "query",
+  "io": "feature",
+  "battery": 11,
+  "minPercent": 1,
+  "charging": { "offset": 12, "nonZero": true, "values": ["0x01"] },
+  "payloadXor": "0xFF",
+  "wakeDelayMs": 150,
+  "query": {
+    "length": 65,
+    "set": { "0": "0x11", "1": "0x06" }
+  },
+  "response": {
+    "length": 65,
+    "expect": { "0": "0x11" }
+  },
+  "retries": 2,
+  "pollIntervalMs": 60000,
+  "retryDelayMs": 10000
+}

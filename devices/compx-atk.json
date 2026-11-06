@@ -1,0 +1,23 @@
+{
+  "$schema": "./device.schema.json",
+  "name": "ATK 无线鼠标",
+  "vid": "373B",
+  "pids": ["1031", "102E", "11D9", "11B6", "104D", "103F", "1040", "104C"],
+  "usage": "FF02/0002",
+  "mode": "query",
+  "io": "output",
+  "battery": 6,
+  "charging": { "offset": 7, "nonZero": true },
+  "query": {
+    "length": 17,
+    "set": { "0": "0x08", "1": "0x04" },
+    "checksum": { "type": "sumTo", "target": "0x55", "range": [0, 15], "at": 16 }
+  },
+  "response": {
+    "length": 17,
+    "expect": { "0": "0x08", "1": "0x04" }
+  },
+  "retries": 3,
+  "pollIntervalMs": 60000,
+  "retryDelayMs": 10000
+}

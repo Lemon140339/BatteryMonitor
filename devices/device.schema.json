@@ -3,7 +3,16 @@
   "title": "BatteryMonitor 设备描述",
   "description": "描述一台无线设备的电量读取方式。字段说明见 docs/ADD_DEVICE.md",
   "type": "object",
-  "required": ["name", "vid", "battery"],
+  "allOf": [
+    {
+      "if": {
+        "properties": { "protocol": { "const": "hidpp2" } },
+        "required": ["protocol"]
+      },
+      "then": { "required": ["name", "vid"] },
+      "else": { "required": ["name", "vid", "battery"] }
+    }
+  ],
   "properties": {
     "$schema": {
       "type": "string",
@@ -34,16 +43,57 @@
       "type": "string",
       "description": "接口路径片段，用来区分同一设备的多个集合，例如 col03 / mi_03；留空则自动选择"
     },
+    "usage": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{1,4}/[0-9A-Fa-f]{1,4}$",
+      "description": "按 HID usage 选接口，写法 \"FF02/0002\"（usage 页 / usage）。比 iface 稳：同一接收器的多个集合 colNN 会随固件变"
+    },
+    "protocol": {
+      "enum": ["hidpp2"],
+      "description": "协议判别式。留空 = 传统字节表协议（passive / query）；hidpp2 = 罗技 HID++ 2.0，电量由代码读，JSON 只留身份信息"
+    },
     "mode": {
       "enum": ["passive", "query"],
       "default": "passive",
       "description": "passive = 被动监听设备上报；query = 主动发送查询帧"
+    },
+    "io": {
+      "enum": ["output", "feature"],
+      "default": "output",
+      "description": "query 模式的写入通道：output = WriteFile 走中断端点；feature = HidD_SetFeature 走 Feature 报告"
     },
     "battery": {
       "type": "integer",
       "minimum": 0,
       "maximum": 255,
       "description": "电量所在字节的下标（从 0 开始；第一个字节写 0）"
+    },
+    "scale": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "电量倍率：原始值 × scale；按 10% 档上报的写 10（值 8 表示 80%）"
+    },
+    "minPercent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 0,
+      "description": "有效电量下限：低于它当作无效包。有些协议拿 0 表示休眠/链路断开"
+    },
+    "charging": {
+      "type": "object",
+      "description": "充电/有线标志：某个字节非 0 即认为在充电（或接着线）",
+      "required": ["offset"],
+      "properties": {
+        "offset": { "type": "integer", "minimum": 0, "description": "标志字节下标" },
+        "nonZero": { "type": "boolean", "default": true, "description": "true = 非 0 表示充电" },
+        "values": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})$" },
+          "description": "只认这些取值才算充电（例如 MCHOSE 的 0x01）；留空则按 nonZero 判断"
+        }
+      }
     },
     "readLength": {
       "type": "integer",
@@ -66,7 +116,7 @@
     },
     "models": {
       "type": "object",
-      "description": "型号 ID -> 显示名 / 电量倍率；键写 0x93 这种十六进制",
+      "description": "型号 ID（或 hidpp2 的 WPID）-> 显示名 / 电量倍率；键写 0x93 这种十六进制",
       "additionalProperties": {
         "type": "object",
         "properties": {
@@ -109,8 +159,34 @@
       "required": ["length"],
       "properties": {
         "length": { "type": "integer", "minimum": 1 },
+        "expect": {
+          "type": "object",
+          "description": "应答特征：下标 -> 期望值，全部命中才认这一帧（回显校验）",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})$"
+          },
+          "examples": [{ "0": "0x08", "1": "0x04" }]
+        },
         "checksum": { "$ref": "#/definitions/checksum" }
       }
+    },
+    "payloadXor": {
+      "type": "string",
+      "pattern": "^0x[0-9A-Fa-f]{1,2}$",
+      "description": "整包异或的掩码，例如 \"0xFF\"：写帧时异或 [1..end]，解帧时异或 [2..end]"
+    },
+    "retries": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 2,
+      "description": "单次查询的重试次数：休眠设备常常第一个包不应答"
+    },
+    "wakeDelayMs": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 120,
+      "description": "Feature 报告写入后等多久再读（毫秒）"
     },
     "pollIntervalMs": {
       "type": "integer",
@@ -128,10 +204,10 @@
   "definitions": {
     "checksum": {
       "type": "object",
-      "description": "校验方式。目前只支持 sum8：把 range 区间求和取低 8 位写到 at 位置",
-      "required": ["type", "at"],
+      "description": "校验方式：sum8 = 区间和取低 8 位写到 at；sumTo = 让区间和 + 校验字节 ≡ target（mod 256）；none = 不校验",
+      "required": ["type"],
       "properties": {
-        "type": { "enum": ["sum8", "none"] },
+        "type": { "enum": ["sum8", "sumTo", "none"] },
         "range": {
           "type": "array",
           "items": { "type": "integer", "minimum": 0 },
@@ -139,7 +215,16 @@
           "maxItems": 2,
           "description": "[起始下标, 结束下标]，闭区间"
         },
-        "at": { "type": "integer", "minimum": 0, "description": "校验和写入的下标" }
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "校验和所在下标（写入时必填；sumTo 校验时可不填）"
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})$",
+          "description": "sumTo 的目标值，例如 \"0x55\""
+        }
       }
     }
   }
