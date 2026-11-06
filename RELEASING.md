@@ -23,7 +23,13 @@
 - 支持罗技 G304
 ```
 
-### 2. 本地编译验证
+### 2. 删掉或改名了配置文件？
+
+如果这个版本**删除或改名**了 `devices/*.json`，把旧文件名加进 `devices/manifest.json` 的
+`obsolete` 列表，并把 `version` 改成新版本号。老用户升级时程序会自动删除/忽略这些旧文件，
+不需要他们手动清理（见 `docs/DESIGN.md`「升级：旧配置自动清理」）。
+
+### 3. 本地编译验证
 
 ```bat
 build.bat
@@ -31,7 +37,7 @@ build.bat
 
 编译通过后，**双击跑一次**，确认屏幕上还能正常显示电量。
 
-### 3. 打包（带版本号）
+### 4. 打包（带版本号）
 
 ```bat
 package.bat v1.1.0
@@ -41,7 +47,7 @@ package.bat v1.1.0
 
 > 版本号必须显式传入，漏了 `package.bat` 会直接报错退出（以前默认 `v1.0.0`，容易把新版本打成旧号）。
 
-### 4. 提交并打标签
+### 5. 提交并打标签
 
 ```powershell
 git add -A
@@ -50,7 +56,7 @@ git tag -a v1.1.0 -m "BatteryMonitor v1.1.0"
 git push origin main --tags
 ```
 
-### 5. 在 GitHub 上发布
+### 6. 在 GitHub 上发布
 
 1. 打开 [Releases → Draft a new release](https://github.com/Lemon140339/BatteryMonitor/releases/new)
 2. **Choose a tag** → 选刚推的 `v1.1.0`
@@ -59,7 +65,7 @@ git push origin main --tags
 5. **Attach binaries**：拖入 `dist\BatteryMonitor-v1.1.0.zip`
 6. 勾选 **Set as the latest release** → Publish
 
-### 6. 发布后自检
+### 7. 发布后自检
 
 - [ ] Actions 页面最新一次构建是绿的
 - [ ] Release 页面的附件大小和本地 zip 一致
@@ -70,7 +76,7 @@ git push origin main --tags
 
 ## 出问题怎么回滚
 
-**Release 发错了**：在 Release 页面点 Delete，然后重新按第 5 步发一次。
+**Release 发错了**：在 Release 页面点 Delete，然后重新按第 6 步发一次。
 
 **标签打错了**：
 
@@ -89,8 +95,9 @@ git push origin :refs/tags/v1.1.0   # 删远端
 |---|---|
 | `package.bat` | 否（参数必填，脚本里没有版本号） |
 | `CHANGELOG.md` | **是** |
-| Git tag | 是（第 4 步） |
-| Release 标题 | 是（第 5 步） |
+| `devices/manifest.json` | **是**（`version` 字段；删改配置时还要更新 `obsolete`，见第 2 步） |
+| Git tag | 是（第 5 步） |
+| Release 标题 | 是（第 6 步） |
 | `README.md` | 否（徽章自动读 tag，打包产物名用 `<版本>` 占位） |
 
 只有 `CHANGELOG.md` 是硬编码的，其余都从 tag 派生或走参数。

@@ -38,8 +38,13 @@ namespace BatteryMonitor
             }
 
             string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devices");
+
+            // 旧版本删掉/改名的配置可能还留在 devices\ 里：按清单清理（能删就删），
+            // 删不掉的也直接忽略，避免升级后出现重复的行。
+            List<string> ignoredFiles = ConfigManifest.ApplyObsolete(dir);
+
             List<string> problems;
-            var profiles = ProfileLoader.Load(dir, out problems);
+            var profiles = ProfileLoader.Load(dir, out problems, ignoredFiles);
             ReportProblems(problems);
 
             var workers = new List<DeviceWorker>();

@@ -55,6 +55,14 @@ BatteryMonitor\
 
 退出：**托盘图标右键 → 退出**。也可以在任务管理器里结束 `BatteryMonitor.exe`。
 
+## 升级
+
+直接把新版本的文件覆盖到旧目录即可，不需要先卸载，也不用手动删文件。
+
+旧版本删掉或改名的配置文件会留在 `devices\` 里，程序启动时会按
+[`devices/manifest.json`](devices/manifest.json) 的 `obsolete` 列表自动忽略
+（有写权限时顺手删除），所以不会出现"同一个设备显示两行"这种升级残留问题。
+
 ## 托盘菜单
 
 | 项 | 作用 |
@@ -134,6 +142,7 @@ package.bat v1.0.1
 ```
 src/
   Profile.cs          设备描述模型 + JSON 加载
+  ConfigManifest.cs   读取 devices/manifest.json，清理旧版本遗留的配置
   HidDevice.cs        通用 HID 打开/读写
   HidPresence.cs      判断设备接口当前在不在（决定界面显示哪些设备）
   DeviceWorker.cs     按 profile 驱动设备（被动 / 查询；型号识别）
@@ -149,6 +158,7 @@ devices/
   beken-1d57.json     1D57 无线接收器家族（48 个型号 ID 共用一份配置）
   ky87.json           查询模式示例
   device.schema.json  JSON Schema（编辑器自动补全）
+  manifest.json       本版本配置清单（obsolete = 升级时要清理的旧文件）
 docs/
   ADD_DEVICE.md       如何适配新设备
   DESIGN.md           设计取舍
@@ -247,6 +257,8 @@ corner when you go fullscreen (browser or borderless games).
   device is a JSON edit, not a code change
 - **Plugged-in devices only** — rows appear when a receiver is present and disappear
   the moment it is unplugged
+- **Upgrade-safe** — just overwrite the folder; configs removed by a release are
+  cleaned up / ignored automatically (`devices/manifest.json`)
 - **Single ~46 KB exe** — only needs .NET Framework 4.x
 - **Read-only** — it never writes to the device
 

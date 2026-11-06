@@ -22,6 +22,7 @@ namespace BatteryMonitorTests
             TestEffectivePids();
             TestPathMatching();
             TestProfileValidation();
+            TestConfigManifest();
             TestShippedConfigs();
 
             Console.WriteLine(_fail == 0 ? "ALL PASS" : ("FAILURES=" + _fail));
@@ -125,6 +126,47 @@ namespace BatteryMonitorTests
             Check("missing pid/pids flagged", problems.Count >= 1);
         }
 
+        static string DeviceJson(string name)
+        {
+            return "{ \"name\":\"" + name + "\",\"vid\":\"1D57\",\"pid\":\"FA65\",\"iface\":\"col03\"," +
+                   "\"mode\":\"passive\",\"readLength\":5,\"battery\":4 }";
+        }
+
+        static void TestConfigManifest()
+        {
+            // 清单缺失：不抛异常，按没有旧配置处理
+            string dir = TempDir();
+            Check("missing manifest -> empty obsolete", ConfigManifest.LoadObsolete(dir).Count == 0);
+
+            // 清单损坏：容忍
+            File.WriteAllText(Path.Combine(dir, "manifest.json"), "{ broken", Encoding.UTF8);
+            Check("broken manifest -> empty obsolete", ConfigManifest.LoadObsolete(dir).Count == 0);
+
+            // 正常清单 + 旧文件：忽略并顺手删除
+            dir = TempDir();
+            File.WriteAllText(Path.Combine(dir, "manifest.json"),
+                "{\"version\":\"test\",\"obsolete\":[\"in10.json\"]}", Encoding.UTF8);
+            File.WriteAllText(Path.Combine(dir, "in10.json"), DeviceJson("IN10"), Encoding.UTF8);
+            File.WriteAllText(Path.Combine(dir, "ky87.json"), DeviceJson("KY87"), Encoding.UTF8);
+
+            List<string> ignored = ConfigManifest.ApplyObsolete(dir);
+            Check("obsolete listed", ignored.Count == 1 && ignored[0] == "in10.json");
+            Check("obsolete file deleted when writable", !File.Exists(Path.Combine(dir, "in10.json")));
+
+            // 模拟"没有权限、删不掉"：文件还在，但也不会被加载
+            File.WriteAllText(Path.Combine(dir, "in10.json"), DeviceJson("IN10"), Encoding.UTF8);
+            List<string> problems;
+            var profiles = ProfileLoader.Load(dir, out problems, ignored);
+            Check("obsolete config not loaded", profiles.Count == 1 && profiles[0].name == "KY87");
+            Check("manifest.json not loaded as device", problems.Count == 0);
+
+            // 没有清单时，manifest.json 本身也会被加载器跳过
+            dir = TempDir();
+            File.WriteAllText(Path.Combine(dir, "manifest.json"), "{\"obsolete\":[]}", Encoding.UTF8);
+            profiles = ProfileLoader.Load(dir, out problems, null);
+            Check("manifest.json skipped by loader", profiles.Count == 0 && problems.Count == 0);
+        }
+
         static void TestShippedConfigs()
         {
             string devices = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "devices"));
@@ -135,9 +177,10 @@ namespace BatteryMonitorTests
             }
 
             List<string> problems;
-            var list = ProfileLoader.Load(devices, out problems);
+            List<string> ignored = ConfigManifest.ApplyObsolete(devices);
+            var list = ProfileLoader.Load(devices, out problems, ignored);
             Check("shipped configs load without problems", problems.Count == 0);
-            Check("shipped configs non-empty", list.Count >= 2);
+            Check("shipped device configs count", list.Count == 2);
 
             bool family = false;
             foreach (var p in list)
@@ -145,6 +188,13 @@ namespace BatteryMonitorTests
                 if (p.pids != null && p.pids.Count > 0 && p.modelIndex.HasValue) family = true;
             }
             Check("shipped config has beken family", family);
+
+            bool listsIn10 = false;
+            foreach (string name in ConfigManifest.LoadObsolete(devices))
+            {
+                if (string.Equals(name, "in10.json", StringComparison.OrdinalIgnoreCase)) listsIn10 = true;
+            }
+            Check("shipped manifest lists obsolete in10.json", listsIn10);
         }
 
         static void Check(string name, bool ok)

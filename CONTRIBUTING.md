@@ -106,8 +106,10 @@ chore: bump build script
 ### 提交前自查
 
 - [ ] `build.bat` 能编过
+- [ ] `test.bat` 能过
 - [ ] 改动的设备配置用 `--log` 验证过
 - [ ] 文档和 schema 同步更新
+- [ ] 删/改了 `devices/*.json` 时，同步更新 `devices/manifest.json` 的 `obsolete`
 
 ---
 

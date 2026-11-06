@@ -26,6 +26,8 @@ echo Running logic tests: profiles and models...
 "%CSC%" /nologo /target:exe /out:"%HERE%.tmp-test\ProfileModelTest.exe" ^
   "%HERE%src\Profile.cs" ^
   "%HERE%src\HidDevice.cs" ^
+  "%HERE%src\ConfigManifest.cs" ^
+  "%HERE%src\DebugLog.cs" ^
   "%HERE%tests\ProfileModelTest.cs" ^
   /r:System.Web.Extensions.dll
 if errorlevel 1 goto :buildfail

@@ -109,12 +109,33 @@ namespace BatteryMonitor
     {
         public static List<DeviceProfile> Load(string dir, out List<string> problems)
         {
+            return Load(dir, out problems, null);
+        }
+
+        /// <summary>
+        /// 加载 devices 目录下的设备配置。
+        /// </summary>
+        /// <param name="ignoreFiles">
+        /// 要跳过的文件名（大小写不敏感）。旧版本废弃的配置由
+        /// <see cref="ConfigManifest"/> 交过来，避免它们继续生成重复的行。
+        /// </param>
+        public static List<DeviceProfile> Load(string dir, out List<string> problems, IList<string> ignoreFiles)
+        {
             problems = new List<string>();
             var list = new List<DeviceProfile>();
             if (!Directory.Exists(dir))
             {
                 problems.Add("设备目录不存在：" + dir);
                 return list;
+            }
+
+            var ignore = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (ignoreFiles != null)
+            {
+                foreach (string name in ignoreFiles)
+                {
+                    if (!string.IsNullOrEmpty(name)) ignore[name.Trim()] = name;
+                }
             }
 
             var files = Directory.GetFiles(dir, "*.json");
@@ -125,6 +146,8 @@ namespace BatteryMonitor
             {
                 string file = Path.GetFileName(f);
                 if (file.EndsWith(".schema.json", StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(file, ConfigManifest.FileName, StringComparison.OrdinalIgnoreCase)) continue;
+                if (ignore.ContainsKey(file)) continue;
                 try
                 {
                     string text = File.ReadAllText(f, Encoding.UTF8);

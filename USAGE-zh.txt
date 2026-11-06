@@ -72,11 +72,20 @@
     beken-1d57.json       1D57 无线接收器家族（INPHIC IN10、Attack Shark X11 等 48 个型号）
     ky87.json             NDIY KY87
     device.schema.json    编辑器补全用，程序会跳过
+    manifest.json         配置清单（升级时用来清理旧配置）
   USAGE-zh.txt            本文件
   install-autostart.bat   注册开机自启
   uninstall-autostart.bat 取消开机自启
 
 移动或复制时请把**整个文件夹一起动**，只拷 exe 是不行的。
+
+
+升级
+----
+直接把新版本的整个文件夹覆盖到旧目录即可：不用先卸载，也不用手动删 devices 里的旧文件。
+
+旧版本删掉/改名的配置会按 devices\manifest.json 自动清理（没有权限时忽略、不加载），
+所以不会出现"同一台设备显示两行"这种升级残留。
 
 
 开机自启
