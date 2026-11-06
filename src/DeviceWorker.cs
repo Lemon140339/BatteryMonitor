@@ -321,22 +321,27 @@ namespace BatteryMonitor
             if (opened == null) return -1;
             try
             {
-                byte[] frame = ProtocolCodec.BuildQuery(_p);
+                var plans = ProtocolCodec.BuildQueries(_p);
                 int attempts = _p.retries > 0 ? _p.retries : 1;
+                int len = _p.response != null && _p.response.length > 0
+                    ? _p.response.length
+                    : (plans.Count > 0 ? plans[0].Frame.Length : 32);
 
                 for (int i = 0; i < attempts; i++)
                 {
-                    if (!Send(opened, frame)) { Thread.Sleep(80); continue; }
+                    foreach (var plan in plans)
+                    {
+                        if (!Send(opened, plan.Frame)) { Thread.Sleep(80); continue; }
 
-                    int len = _p.response != null && _p.response.length > 0 ? _p.response.length : frame.Length;
-                    var resp = new byte[len];
-                    int n = ReadReply(opened, resp, len);
-                    if (n != len) { Thread.Sleep(80); continue; }
+                        var resp = new byte[len];
+                        int n = ReadReply(opened, resp, len);
+                        if (n != len) { Thread.Sleep(80); continue; }
 
-                    int pct;
-                    bool charging, full;
-                    if (!ProtocolCodec.Decode(_p, resp, out pct, out charging, out full)) continue;
-                    return pct;
+                        int pct;
+                        bool charging, full;
+                        if (!ProtocolCodec.Decode(_p, plan, resp, out pct, out charging, out full)) continue;
+                        return pct;
+                    }
                 }
                 return -1;
             }

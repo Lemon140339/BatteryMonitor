@@ -228,6 +228,33 @@ Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Enum\HID' |
 含义：usage 页 `0xFF02`、usage `0x0002`。写 `FF01/0000` 表示"只认 usage 页、usage 不限"。
 程序会打开每个候选接口读报告描述符（0 权限即可），按 usage 匹配；找不到时再退回 `iface`。
 
+### 同一族多种方言（variants）
+
+有些 ODM 固件对同一 VID 有不止一套问法（例如 A8A5：`55 30 A5…` 与 `F0 30 01…`），
+一套问不出来就换另一套。`query.variants` 按顺序逐个试，每个变体可以带自己的固定字节、
+发送校验、应答特征和应答校验：
+
+```json
+"query": {
+  "length": 64,
+  "variants": [
+    {
+      "set": { "0": "0x55", "1": "0x30", "2": "0xA5", "4": "0x2E" },
+      "expect": { "0": "0x55", "1": "0x30" }
+    },
+    {
+      "set": { "0": "0xF0", "1": "0x30", "2": "0x01", "4": "0x2E" },
+      "checksum": { "type": "sum8", "range": [4, 63], "at": 3 },
+      "expect": { "0": "0xF0", "1": "0x30" },
+      "verify": { "type": "sum8", "range": [4, 63], "at": 3 }
+    }
+  ]
+}
+```
+
+最外层 `query.length` / `response.length` 仍然共用；变体里没写的 `expect` / `verify`
+会退回 `response` 里的值。没有 `variants` 时行为与以前完全一样。
+
 ### 罗技 HID++（`protocol: "hidpp2"`）
 
 罗技不是"字节表"协议：feature 索引要在运行时问设备，一个接收器后面还挂 1~6 台设备。
@@ -276,6 +303,7 @@ Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Enum\HID' |
 | `models` | passive | 型号 ID → `name` / 可选 `scale`（电量倍率，默认 1；10% 档写 10） |
 | `query.length` | query | 发送帧总长度（含报告 ID） |
 | `query.set` | query | 固定字节，`{"下标": "值"}`，未列出的补 0 |
+| `query.variants` | query | 同一族多种方言：按顺序逐个试，每项可带 `set` / `checksum` / `expect` / `verify` |
 | `query.checksum` | query | 发送帧的校验 |
 | `response.length` | query | 期望回复长度 |
 | `response.expect` | query | 应答特征 `{"下标": "值"}`，全部命中才认这一帧 |

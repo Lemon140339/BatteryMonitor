@@ -24,6 +24,7 @@ namespace BatteryMonitorTests
             TestProfileValidation();
             TestNewFields();
             TestProtocolCodec();
+            TestVariantProtocol();
             TestHidppCodec();
             TestConfigManifest();
             TestShippedConfigs();
@@ -187,12 +188,14 @@ namespace BatteryMonitorTests
             {
                 foreach (string s in problems) Console.WriteLine("      " + s);
             }
-            Check("shipped device configs count", list.Count == 8);
+            Check("shipped device configs count", list.Count == 10);
 
             bool family = false;
             bool compx = false;
+            bool compx54 = false;
             bool mchose = false;
             bool hidpp = false;
+            bool a8a4 = false;
             foreach (var p in list)
             {
                 if (p.pids != null && p.pids.Count > 0 && p.modelIndex.HasValue) family = true;
@@ -204,13 +207,27 @@ namespace BatteryMonitorTests
                     Check("compx query report id", frame != null && frame[0] == 0x08 && frame[1] == 0x04);
                     Check("compx query checksum 0x49", frame != null && frame[16] == 0x49);
                 }
+                if (p.name == "ATK Zero 无线鼠标")
+                {
+                    compx54 = true;
+                    var plans = ProtocolCodec.BuildQueries(p);
+                    Check("54L15 query frame length", plans.Count == 1 && plans[0].Frame.Length == 64);
+                    Check("54L15 link index", plans[0].Frame[5] == 0x01 && plans[0].Frame[6] == 0x07);
+                }
                 if (p.name == "MCHOSE A7 Pro") mchose = true;
                 if (p.IsHidpp2) hidpp = true;
+                if (p.name == "A8A5 无线鼠标")
+                {
+                    a8a4 = true;
+                    Check("A8A5 has two dialect frames", ProtocolCodec.BuildQueries(p).Count == 2);
+                }
             }
             Check("shipped config has beken family", family);
             Check("shipped config has compx", compx);
+            Check("shipped config has compx 54L15", compx54);
             Check("shipped config has mchose", mchose);
             Check("shipped config has logitech hidpp", hidpp);
+            Check("shipped config has a8a4 family", a8a4);
 
             bool listsIn10 = false;
             foreach (string name in ConfigManifest.LoadObsolete(devices))
@@ -364,6 +381,116 @@ namespace BatteryMonitorTests
             plain[12] = 0;
             Check("mchose raw fallback", ProtocolCodec.Decode(m, plain, out pct, out charging, out full)
                 && pct == 33 && !charging);
+        }
+
+        // ---------------- 追加协议：Compx 54L15 与 A8A4/A8A5 的两种方言 ----------------
+
+        static void TestVariantProtocol()
+        {
+            // Compx / Nordic 54L15（ATK Zero）：64 字节，第 5 位是 link（0 有线 / 1 无线）
+            var p = new DeviceProfile();
+            p.name = "ATK Zero 无线鼠标";
+            p.vid = "373B";
+            p.pids = new List<string> { "1155", "124F" };
+            p.usage = "FF05/0001";
+            p.mode = "query";
+            p.io = "output";
+            p.battery = 7;
+            p.query = new QuerySpec
+            {
+                length = 64,
+                set = new Dictionary<string, string>
+                {
+                    { "0", "0x08" }, { "1", "0x7D" }, { "2", "0x72" }, { "3", "0x02" },
+                    { "5", "0x01" }, { "6", "0x07" }, { "7", "0x01" }
+                }
+            };
+            p.response = new ResponseSpec
+            {
+                length = 64,
+                expect = new Dictionary<string, string>
+                {
+                    { "0", "0x08" }, { "1", "0x72" }, { "2", "0x00" }, { "5", "0x07" }
+                }
+            };
+
+            var plans = ProtocolCodec.BuildQueries(p);
+            Check("54L15 single plan", plans.Count == 1 && plans[0].Frame.Length == 64);
+            Check("54L15 frame bytes", plans[0].Frame[0] == 0x08 && plans[0].Frame[1] == 0x7D
+                && plans[0].Frame[2] == 0x72 && plans[0].Frame[3] == 0x02
+                && plans[0].Frame[4] == 0x00 && plans[0].Frame[5] == 0x01
+                && plans[0].Frame[6] == 0x07 && plans[0].Frame[7] == 0x01);
+
+            var resp = new byte[64];
+            resp[0] = 0x08; resp[1] = 0x72; resp[2] = 0x00; resp[5] = 0x07; resp[7] = 42;
+            int pct; bool ch, full;
+            Check("54L15 decode", ProtocolCodec.Decode(p, plans[0], resp, out pct, out ch, out full) && pct == 42);
+
+            resp[2] = 0x01;   // 接收器转发了，但鼠标没答（休眠）→ 不能当电量
+            Check("54L15 sleeping rejected", !ProtocolCodec.Decode(p, plans[0], resp, out pct, out ch, out full));
+
+            // A8A4/A8A5：两种方言，一套配置里按顺序试
+            var a = new DeviceProfile();
+            a.name = "A8A5 无线鼠标";
+            a.vid = "A8A5";
+            a.pids = new List<string> { "2255", "0001" };
+            a.usage = "FF01/0010";
+            a.mode = "query";
+            a.io = "output";
+            a.battery = 8;
+            a.minPercent = 1;
+            a.charging = new ChargingSpec { offset = 9, nonZero = true };
+            a.query = new QuerySpec
+            {
+                length = 64,
+                variants = new List<QueryVariant>
+                {
+                    new QueryVariant
+                    {
+                        set = new Dictionary<string, string>
+                        {
+                            { "0", "0x55" }, { "1", "0x30" }, { "2", "0xA5" }, { "3", "0x0B" },
+                            { "4", "0x2E" }, { "5", "0x01" }, { "6", "0x01" }, { "7", "0x01" }
+                        },
+                        expect = new Dictionary<string, string> { { "0", "0x55" }, { "1", "0x30" } }
+                    },
+                    new QueryVariant
+                    {
+                        set = new Dictionary<string, string>
+                        {
+                            { "0", "0xF0" }, { "1", "0x30" }, { "2", "0x01" }, { "4", "0x2E" }
+                        },
+                        checksum = new CheckSpec { type = "sum8", range = new int[] { 4, 63 }, at = 3 },
+                        expect = new Dictionary<string, string> { { "0", "0xF0" }, { "1", "0x30" } },
+                        verify = new CheckSpec { type = "sum8", range = new int[] { 4, 63 }, at = 3 }
+                    }
+                }
+            };
+            a.response = new ResponseSpec { length = 64 };
+
+            var aPlans = ProtocolCodec.BuildQueries(a);
+            Check("A8A5 two dialects", aPlans.Count == 2);
+            Check("A8A5 dialect A frame", aPlans[0].Frame[0] == 0x55 && aPlans[0].Frame[1] == 0x30
+                && aPlans[0].Frame[2] == 0xA5 && aPlans[0].Frame[4] == 0x2E);
+            Check("A8A5 dialect B checksum", aPlans[1].Frame[0] == 0xF0 && aPlans[1].Frame[3] == 0x2E);
+
+            var ra = new byte[64];
+            ra[0] = 0x55; ra[1] = 0x30; ra[8] = 57; ra[9] = 0;
+            Check("A8A5 dialect A decode", ProtocolCodec.Decode(a, aPlans[0], ra, out pct, out ch, out full)
+                && pct == 57 && !ch);
+            ra[9] = 1;
+            Check("A8A5 charging flag", ProtocolCodec.Decode(a, aPlans[0], ra, out pct, out ch, out full) && ch);
+
+            var rb = new byte[64];
+            rb[0] = 0xF0; rb[1] = 0x30; rb[2] = 0x01; rb[4] = 0x2E; rb[8] = 88;
+            int sum = 0;
+            for (int i = 4; i <= 63; i++) sum += rb[i];
+            rb[3] = (byte)(sum & 0xFF);
+            Check("A8A5 dialect B decode", ProtocolCodec.Decode(a, aPlans[1], rb, out pct, out ch, out full)
+                && pct == 88);
+            rb[3] = 0x00;
+            Check("A8A5 dialect B checksum rejected",
+                !ProtocolCodec.Decode(a, aPlans[1], rb, out pct, out ch, out full));
         }
 
         // ---------------- HID++ 帧（罗技） ----------------

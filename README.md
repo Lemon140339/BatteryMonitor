@@ -18,7 +18,7 @@
 - **配置驱动** —— 设备协议写在 `devices/*.json`，新增设备不用改代码
 - **只显示当前接入的设备** —— 接收器没插、或者拔掉之后，那一行立即消失，不会留一排 `--` 空行；
   一台都没检测到时显示「未检测到设备」
-- **单文件 exe** —— 约 46 KB，无第三方依赖（只需 .NET Framework 4.x）；托盘图标是代码画的，不带资源文件
+- **单文件 exe** —— 约 75 KB，无第三方依赖（只需 .NET Framework 4.x）；托盘图标是代码画的，不带资源文件
 - **只读** —— 不写设备、不改设置，仅做查询与监听
 
 ## 显示效果
@@ -106,13 +106,15 @@ BatteryMonitor.exe --log
 | 2.4G 无线鼠标（Beken 1D57 家族） | `1D57:FA60` / `FA62` / `FA65` | `col03` | 被动读 5 字节，按报文里的型号 ID 识别（INPHIC IN10、Attack Shark X11 等 48 个型号） |
 | KY87 | `0C45:FEFE` | `mi_03` | 查询 33 字节 |
 | ATK 无线鼠标 | `373B:1031` / `102E` / `11D9` / `11B6` / … | usage `FF02/02` | 查询 17 字节，命令 `08 04`，整帧和恒为 `0x55` |
+| ATK Zero 无线鼠标 | `373B:1155` / `124F` | usage `FF05/01` | 查询 64 字节，命令 `08 7D 72 02 00 <link> 07 01`，电量在第 7 字节 |
 | VXE / VGN 无线鼠标 | `3554:F58A` / `F58C` / `F58E` / … | usage `FF02/02` | 同上（Compx/Nordic 52840 同协议） |
 | 达尔优无线鼠标 | `260D:1175` / `1193` / `1154` / `1196` | usage `FF02/02` | 同上 |
 | G-Wolves 无线鼠标 | `33E4:3854` / `4719` | usage `FF02/02` | 同上 |
+| A8A5 无线鼠标 | `A8A5:2255` / `0001` | usage `FF01/10` | 64 字节，命令 `0x30`，电量在第 8 字节；同一 ODM 有 `55…` / `F0…` 两种方言，两种都试 |
 | MCHOSE A7 Pro | `5253:1021` / `0010` | usage `FF01` | Feature 报告 `0x11`，整包 XOR `0xFF`，电量在第 11 字节 |
 | 罗技 Lightspeed / Bolt / Unifying | `046D:C54D` / `C548` / `C52B` 等 | HID++ 2.0 | feature `0x1000` / `0x1004`，**一套实现覆盖所有型号**，不需要逐型号配置 |
 
-> 后四类协议按公开事实实现，**尚未在真机上逐一验证**（作者手上没有这些设备）。
+> 从 ATK 往下的这些新协议按公开事实实现，**尚未在真机上逐一验证**（作者手上没有这些设备）。
 > 读数不对时请带 `--log` 生成的 `battery.log` 反馈，日志里能看到原始报文与失败原因。
 > 罗技这条线只支持 HID++ 2.0；老 HID++ 1.0 接收器（Nano 那代）会回 `0x8F` 错误帧，暂不支持。
 
@@ -169,7 +171,8 @@ src/
 devices/
   beken-1d57.json     1D57 无线接收器家族（48 个型号 ID 共用一份配置）
   ky87.json           查询模式示例
-  compx-*.json        Compx/Nordic 52840 家族（ATK / VXE·VGN / 达尔优 / G-Wolves）
+  compx-*.json        Compx/Nordic 家族（ATK 17B / ATK Zero 54L15 / VXE·VGN / 达尔优 / G-Wolves）
+  a8a4.json           A8A5 ODM 无线鼠标（55… / F0… 两种方言都试）
   mchose-a7pro.json   MCHOSE Feature 报告 + 整包异或示例
   logitech-hidpp.json 罗技 HID++ 2.0（只写身份，电量由代码读）
   device.schema.json  JSON Schema（编辑器自动补全）
@@ -290,7 +293,7 @@ corner when you go fullscreen (browser or borderless games).
   the moment it is unplugged
 - **Upgrade-safe** — just overwrite the folder; configs removed by a release are
   cleaned up / ignored automatically (`devices/manifest.json`)
-- **Single ~46 KB exe** — only needs .NET Framework 4.x
+- **Single ~75 KB exe** — only needs .NET Framework 4.x
 - **Read-only** — it never writes to the device
 
 Build with `build.bat`, package a release with `package.bat`.

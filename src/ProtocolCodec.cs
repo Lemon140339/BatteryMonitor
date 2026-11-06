@@ -10,28 +10,74 @@ namespace BatteryMonitor
     /// </summary>
     public static class ProtocolCodec
     {
-        /// <summary>按配置组一帧查询报文：先填固定字节，再算校验和，最后整包异或。</summary>
-        public static byte[] BuildQuery(DeviceProfile p)
+        /// <summary>一帧待发报文 + 它对应的应答特征。</summary>
+        public sealed class PacketPlan
         {
+            public byte[] Frame;
+            public Dictionary<string, string> Expect;
+            public CheckSpec Verify;
+        }
+
+        /// <summary>
+        /// 按配置组出全部候选帧。没有 variants 时只有一帧；
+        /// 有 variants 时按配置顺序返回（同一 ODM 的多种方言）。
+        /// </summary>
+        public static List<PacketPlan> BuildQueries(DeviceProfile p)
+        {
+            var plans = new List<PacketPlan>();
             QuerySpec q = p == null ? null : p.query;
             int len = q != null && q.length > 0 ? q.length : 32;
-            var f = new byte[len];
+            int mask = p == null ? -1 : p.XorMask;
+            Dictionary<string, string> envelopeExpect = p == null || p.response == null ? null : p.response.expect;
+            CheckSpec envelopeVerify = p == null || p.response == null ? null : p.response.checksum;
 
-            if (q != null && q.set != null)
+            if (q != null && q.variants != null && q.variants.Count > 0)
             {
-                foreach (var kv in q.set)
+                foreach (QueryVariant v in q.variants)
+                {
+                    if (v == null) continue;
+                    var plan = new PacketPlan();
+                    plan.Frame = BuildFrame(len, v.set, v.checksum, mask);
+                    plan.Expect = v.expect != null ? v.expect : envelopeExpect;
+                    plan.Verify = v.verify != null ? v.verify : envelopeVerify;
+                    plans.Add(plan);
+                }
+                return plans;
+            }
+
+            var single = new PacketPlan();
+            single.Frame = BuildQuery(p);
+            single.Expect = envelopeExpect;
+            single.Verify = envelopeVerify;
+            plans.Add(single);
+            return plans;
+        }
+
+        static byte[] BuildFrame(int len, Dictionary<string, string> set, CheckSpec checksum, int mask)
+        {
+            if (len <= 0) len = 32;
+            var f = new byte[len];
+            if (set != null)
+            {
+                foreach (var kv in set)
                 {
                     int idx = DeviceProfile.ParseInt(kv.Key, -1);
                     int val = DeviceProfile.ParseInt(kv.Value, 0);
                     if (idx >= 0 && idx < len) f[idx] = (byte)val;
                 }
             }
-
-            if (q != null && q.checksum != null) ApplyChecksum(f, q.checksum);
-
-            int mask = p == null ? -1 : p.XorMask;
+            if (checksum != null) ApplyChecksum(f, checksum);
             if (mask >= 0) XorRange(f, 1, len - 1, mask);
             return f;
+        }
+
+        /// <summary>按配置组一帧查询报文：先填固定字节，再算校验和，最后整包异或。</summary>
+        public static byte[] BuildQuery(DeviceProfile p)
+        {
+            QuerySpec q = p == null ? null : p.query;
+            int len = q != null && q.length > 0 ? q.length : 32;
+            int mask = p == null ? -1 : p.XorMask;
+            return BuildFrame(len, q == null ? null : q.set, q == null ? null : q.checksum, mask);
         }
 
         /// <summary>
@@ -134,19 +180,28 @@ namespace BatteryMonitor
             return list;
         }
 
+        public static bool Decode(DeviceProfile p, byte[] raw, out int percent, out bool charging, out bool full)
+        {
+            return Decode(p, null, raw, out percent, out charging, out full);
+        }
+
         /// <summary>
         /// 从应答里取出电量。依次试每个候选帧：expect → checksum → 电量范围，
         /// 全通过才算数。返回 false 表示这一帧不可信（休眠、链路断开、回显）。
         /// </summary>
-        public static bool Decode(DeviceProfile p, byte[] raw, out int percent, out bool charging, out bool full)
+        public static bool Decode(DeviceProfile p, PacketPlan plan, byte[] raw, out int percent, out bool charging, out bool full)
         {
             percent = -1;
             charging = false;
             full = false;
             if (p == null || raw == null) return false;
 
-            Dictionary<string, string> expect = p.response == null ? null : p.response.expect;
-            CheckSpec check = p.response == null ? null : p.response.checksum;
+            Dictionary<string, string> expect = plan != null && plan.Expect != null
+                ? plan.Expect
+                : (p.response == null ? null : p.response.expect);
+            CheckSpec check = plan != null && plan.Verify != null
+                ? plan.Verify
+                : (p.response == null ? null : p.response.checksum);
             int idx = p.battery.HasValue ? p.battery.Value : -1;
             int scale = p.scale > 0 ? p.scale : 1;
             int min = p.minPercent;

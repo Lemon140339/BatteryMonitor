@@ -16,12 +16,26 @@ namespace BatteryMonitor
         public string target { get; set; } // sumTo：整段字节和的模 256 目标，如 "0x55"
     }
 
+    /// <summary>
+    /// 同一族设备的"另一种方言"：有些 ODM 固件对同一 VID 有不止一套帧格式，
+    /// 一套问不出来就换另一套。每个变体带自己的固定字节、校验和与应答特征。
+    /// </summary>
+    public class QueryVariant
+    {
+        public Dictionary<string, string> set { get; set; }
+        public CheckSpec checksum { get; set; }
+        public Dictionary<string, string> expect { get; set; }
+        public CheckSpec verify { get; set; }
+    }
+
     /// <summary>主动查询帧描述</summary>
     public class QuerySpec
     {
         public int length { get; set; }
         public Dictionary<string, string> set { get; set; }  // 下标 -> 值
         public CheckSpec checksum { get; set; }
+        /// <summary>多方言候选帧；有它时按顺序逐个试，set/checksum 可以留在变体里。</summary>
+        public List<QueryVariant> variants { get; set; }
     }
 
     /// <summary>回复帧描述</summary>
@@ -400,7 +414,8 @@ namespace BatteryMonitor
                 {
                     if (p.query == null || p.query.length <= 0)
                         problems.Add(tag + "查询模式必须提供 query.length（发送帧总长度）");
-                    if (p.query != null && p.query.set == null && p.query.checksum == null)
+                    bool hasVariants = p.query != null && p.query.variants != null && p.query.variants.Count > 0;
+                    if (p.query != null && !hasVariants && p.query.set == null && p.query.checksum == null)
                         problems.Add(tag + "query 里既没有 set 也没有 checksum，等于发一帧全 0，多半不对");
                     if (p.response == null || p.response.length <= 0)
                         problems.Add(tag + "查询模式必须提供 response.length（期望回复长度）");
@@ -423,9 +438,38 @@ namespace BatteryMonitor
                         }
                     }
 
+                    if (p.query != null && p.query.variants != null)
+                    {
+                        for (int i = 0; i < p.query.variants.Count; i++)
+                        {
+                            QueryVariant v = p.query.variants[i];
+                            string vtag = tag + "query.variants[" + i + "]：";
+                            if (v == null)
+                            {
+                                problems.Add(vtag + "是空的");
+                                continue;
+                            }
+                            ValidateCheck(vtag + "checksum：", v.checksum, true, problems);
+                            ValidateCheck(vtag + "verify：", v.verify, false, problems);
+                            if (v.expect != null)
+                            {
+                                foreach (var kv in v.expect)
+                                {
+                                    int idx2;
+                                    if (!int.TryParse(kv.Key, out idx2) || idx2 < 0)
+                                        problems.Add(vtag + "expect 的下标 \"" + kv.Key + "\" 不是数字");
+                                    int val2 = DeviceProfile.ParseInt(kv.Value, -999);
+                                    if (val2 == -999 || val2 < 0 || val2 > 255)
+                                        problems.Add(vtag + "expect[\"" + kv.Key + "\"] 的值无法解析");
+                                }
+                            }
+                        }
+                    }
+
                     if (p.charging != null && p.response != null && p.response.length > 0
                         && (p.charging.offset < 0 || p.charging.offset >= p.response.length))
                         problems.Add(tag + "charging.offset(" + p.charging.offset + ") 超出了 response.length(" + p.response.length + ") 的范围");
+
                 }
                 else if (p.charging != null && p.readLength > 0
                     && (p.charging.offset < 0 || p.charging.offset >= p.readLength))

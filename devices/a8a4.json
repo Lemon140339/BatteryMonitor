@@ -1,0 +1,40 @@
+{
+  "$schema": "./device.schema.json",
+  "name": "A8A5 无线鼠标",
+  "vid": "A8A5",
+  "pids": ["2255", "0001"],
+  "usage": "FF01/0010",
+  "mode": "query",
+  "io": "output",
+  "battery": 8,
+  "minPercent": 1,
+  "charging": { "offset": 9, "nonZero": true },
+  "query": {
+    "length": 64,
+    "variants": [
+      {
+        "set": {
+          "0": "0x55",
+          "1": "0x30",
+          "2": "0xA5",
+          "3": "0x0B",
+          "4": "0x2E",
+          "5": "0x01",
+          "6": "0x01",
+          "7": "0x01"
+        },
+        "expect": { "0": "0x55", "1": "0x30" }
+      },
+      {
+        "set": { "0": "0xF0", "1": "0x30", "2": "0x01", "4": "0x2E" },
+        "checksum": { "type": "sum8", "range": [4, 63], "at": 3 },
+        "expect": { "0": "0xF0", "1": "0x30" },
+        "verify": { "type": "sum8", "range": [4, 63], "at": 3 }
+      }
+    ]
+  },
+  "response": { "length": 64 },
+  "retries": 2,
+  "pollIntervalMs": 60000,
+  "retryDelayMs": 10000
+}

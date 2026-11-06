@@ -1,0 +1,29 @@
+{
+  "$schema": "./device.schema.json",
+  "name": "ATK Zero 无线鼠标",
+  "vid": "373B",
+  "pids": ["1155", "124F"],
+  "usage": "FF05/0001",
+  "mode": "query",
+  "io": "output",
+  "battery": 7,
+  "query": {
+    "length": 64,
+    "set": {
+      "0": "0x08",
+      "1": "0x7D",
+      "2": "0x72",
+      "3": "0x02",
+      "5": "0x01",
+      "6": "0x07",
+      "7": "0x01"
+    }
+  },
+  "response": {
+    "length": 64,
+    "expect": { "0": "0x08", "1": "0x72", "2": "0x00", "5": "0x07" }
+  },
+  "retries": 3,
+  "pollIntervalMs": 60000,
+  "retryDelayMs": 10000
+}

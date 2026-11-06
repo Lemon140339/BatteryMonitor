@@ -2,6 +2,52 @@
 
 本项目从 v1.0.0 开始记录变更。
 
+## v1.2.0 — 2026-11-06
+
+### 新增
+
+- **五个新协议族**（全部配置驱动，新增设备不用改代码）：
+  - **Compx/Nordic 52840**（17 字节，命令 `08 04`，整帧和恒为 `0x55`）：
+    ATK、VXE、VGN、达尔优、G-Wolves、Zaopin、Scyrox 等 8 个品牌的接收器 PID
+  - **Compx/Nordic 54L15**（64 字节，`08 7D 72 02 00 <link> 07 01`）：ATK Zero
+  - **MCHOSE `FF01`**（Feature 报告 `0x11`、整包 XOR `0xFF`）：A7 Pro
+  - **A8A4/A8A5 ODM**（64 字节，命令 `0x30`）：名龙星球 MX300 / HJSDZHI S1-V2 等，
+    同一 ODM 的 `55…` / `F0…` 两种方言会自动都试一遍
+  - **罗技 HID++ 2.0**：Lightspeed / Bolt / Unifying 接收器，读 `0x1000`
+    （Battery Level Status）与 `0x1004`（Unified Battery）两个 feature，
+    **一套实现覆盖所有型号**，不需要逐型号配置
+- **HID 层能力**：Feature 报告读写（`HidD_GetFeature` / `HidD_SetFeature`）、
+  `HidD_SetOutputReport` 兜底、按 HID usage 选接口（读报告描述符）、`HidP_GetCaps`
+- **配置能力**：`usage` / `protocol` / `io` / `scale` / `minPercent` / `charging` /
+  `payloadXor` / `retries` / `wakeDelayMs` / `response.expect` / `checksum.sumTo` /
+  `query.variants`（同一族多种方言）
+
+### 变更
+
+- `HidDevice` 暴露 `HidCaps`（三种报告长度），支持按完整路径打开
+- `DeviceWorker` 改为按 `protocol` / `io` 分派；查询逻辑抽到 `ProtocolCodec`
+  （组帧、校验和、整包异或解码、应答特征校验），可以直接单测
+- 新增 `src/ProtocolCodec.cs`、`src/Hidpp.cs`；`test.bat` 增加协议编解码与 HID++ 帧的断言
+
+### 文档
+
+- `docs/ADD_DEVICE.md`：新增三种协议写法的完整说明（Feature 报告型 / 按 usage 选接口 / 多方言 variants）
+- README、USAGE-zh.txt：内置设备表、目录结构、协议摘要同步
+
+### 已知限制
+
+- 上述新协议族**尚未在真机上逐一验证**（作者没有对应设备），
+  读数不对请带 `--log` 生成的 `battery.log` 反馈
+- 罗技只支持 HID++ 2.0；老 HID++ 1.0 接收器（Nano 那代）不支持；
+  一个接收器后挂多台设备时只显示第一台能读到电量的
+- 暂不支持：Razer、黑爵 AJAZZ、雷柏 VT9、MCHOSE 耳机
+
+### 致谢
+
+新增协议的事实来源（均为 MIT，详见 README「设备数据来源与致谢」）：
+InphicBatteryTray、power-island、vxe-monitor、GearPower、mchose-2.4g-battery-tray。
+罗技部分参考 Solaar / logiops / Linux 内核（GPL）的协议事实，未复制其代码或设备表。
+
 ## v1.1.2 — 2026-11-06
 
 ### 新增
