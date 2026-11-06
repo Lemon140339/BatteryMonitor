@@ -55,6 +55,10 @@ namespace BatteryMonitor
             _problems = problems ?? new List<string>();
             _selfCheck = selfCheck;
 
+            // 显示模式是用户的选择，要跨进程记住：上次选了「只留托盘」，
+            // 下次开机就还是「只留托盘」，不要每次启动都回到「自动」。
+            _mode = AppSettings.LoadMode();
+
             _widget = new WidgetForm(_workers, _problems);
             _tray = new TrayView();
             _tray.ModeRequested += OnModeRequested;
@@ -213,6 +217,7 @@ namespace BatteryMonitor
         {
             _mode = mode;
             DebugLog.Write("显示模式切换为 " + ModeText(mode));
+            AppSettings.SaveMode(mode);
             Refresh();
         }
 

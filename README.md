@@ -63,6 +63,7 @@ BatteryMonitor\
 | 隐藏悬浮层，只留托盘 | 只在托盘里看 |
 | 退出 | 结束程序 |
 
+> 选中的模式会被记住（存在 `%APPDATA%\BatteryMonitor\settings.json`），下次启动沿用，不用每次重选。
 
 ## 调试模式
 
