@@ -16,6 +16,8 @@
 - **两种形态** —— 平时待在托盘（悬停看电量），全屏看视频或玩游戏时自动浮到右上角
 - **透明文字层** —— 右上层背景完全透明，鼠标穿透，不影响任何点击
 - **配置驱动** —— 设备协议写在 `devices/*.json`，新增设备不用改代码
+- **多品牌直读** —— 罗技 Lightspeed/Bolt/Unifying 走 HID++ 2.0；ATK / VXE·VGN / 达尔优 / G-Wolves /
+  MCHOSE / A8A5 等 2.4G 接收器走各自的查询协议，都写在 `devices/*.json` 里
 - **只显示当前接入的设备** —— 接收器没插、或者拔掉之后，那一行立即消失，不会留一排 `--` 空行；
   一台都没检测到时显示「未检测到设备」
 - **单文件 exe** —— 约 75 KB，无第三方依赖（只需 .NET Framework 4.x）；托盘图标是代码画的，不带资源文件
@@ -42,9 +44,7 @@
 ```
 BatteryMonitor\
 ├── BatteryMonitor.exe
-├── devices\
-│   ├── beken-1d57.json
-│   └── ky87.json
+├── devices\           内置 10 份配置（罗技、ATK、VXE/VGN、达尔优、G-Wolves、MCHOSE、A8A5、INPHIC…）
 └── install-autostart.bat
 ```
 
@@ -120,7 +120,7 @@ BatteryMonitor.exe --log
 
 > IN10 也在上面的 1D57 家族里（型号 ID `0x93`），不再单独占一个配置文件；
 > 同一接收器换了鼠标会自动改名（同一时刻只显示最近有数据的那一只）。
-> 型号表与报文格式来自两个 MIT 项目，见 [设备数据来源与致谢](#设备数据来源与致谢)。
+> 型号表与报文格式来自多个 MIT 项目，见 [设备数据来源与致谢](#设备数据来源与致谢)。
 
 ## 构建
 
@@ -144,10 +144,10 @@ C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe ^
 生成发布包（编译 + 打包成 zip），版本号必须显式传：
 
 ```bat
-package.bat v1.0.1
+package.bat v1.2.0
 ```
 
-产物在 `dist\BatteryMonitor-<版本>.zip`（例如 `dist\BatteryMonitor-v1.0.1.zip`），包含 exe、devices、文档和脚本。
+产物在 `dist\BatteryMonitor-<版本>.zip`（例如 `dist\BatteryMonitor-v1.2.0.zip`），包含 exe、devices、文档和脚本。
 
 ## 目录结构
 
@@ -200,8 +200,9 @@ uninstall-autostart.bat   取消开机自启
   不是最近有没有数据。拔掉接收器那一行立即消失
 - 同一接收器同时配了两只设备时，同一时刻只显示最近有数据的那一只（型号要连续 3 帧稳定才切换）
 - 查询类设备默认 30 秒轮询一次；新增的国产 2.4G 与罗技默认 60 秒（每次查询会唤醒设备，别太勤）
-- **Compx / MCHOSE / 罗技这几族协议尚未在真机上逐一验证**（作者没有对应设备）：
-  ATK、VXE/VGN、达尔优、G-Wolves、MCHOSE A7 Pro、罗技 Lightspeed/Bolt/Unifying 属于"按公开协议事实实现"，
+- **v1.2.0 新增的协议族尚未在真机上逐一验证**（作者没有对应设备）：
+  Compx 52840（ATK / VXE·VGN / 达尔优 / G-Wolves）、Compx 54L15（ATK Zero）、
+  A8A4/A8A5 ODM、MCHOSE A7 Pro、罗技 Lightspeed/Bolt/Unifying 都属于"按公开协议事实实现"，
   读数不对请带 `--log` 反馈
 - 罗技只支持 HID++ 2.0：老 HID++ 1.0 接收器（Nano 那代）不支持；一个接收器后挂多台设备时只显示第一台能读到电量的
 - 暂不支持：Razer（90 字节帧走 USB 控制传输，Windows 上要验证描述符是否声明对应 Feature 报告）、
@@ -221,9 +222,10 @@ uninstall-autostart.bat   取消开机自启
 
 ## 路线图
 
-- `v1.0.x`：修 bug、稳定性
+- `v1.0.x`：修 bug、稳定性（已完成）
 - `v1.1.0`：托盘图标 + 全屏自动浮出 + 按需提权（已完成）
-- 不做：灯光控制、按键重映射、跨平台（理由见 [docs/DESIGN.md](docs/DESIGN.md)）
+- `v1.2.0`：五个新协议族（Compx 52840 / Compx 54L15、MCHOSE、A8A4/A8A5、罗技 HID++ 2.0）（已完成）
+- 下一步：按用户反馈修补协议与型号；不做灯光控制、按键重映射、跨平台（理由见 [docs/DESIGN.md](docs/DESIGN.md)）
 
 ## 更多文档
 
@@ -237,9 +239,8 @@ uninstall-autostart.bat   取消开机自启
 
 ## 设备数据来源与致谢
 
-内置的 1D57 无线接收器家族配置（[`devices/beken-1d57.json`](devices/beken-1d57.json)：
-48 个型号 ID，电量报文 `03 <型号ID> 40 <状态> <电量>`）用到了下面两个 **MIT** 项目公开的事实性信息，
-按其许可保留版权声明：
+内置设备配置用到了以下 **MIT** 项目公开的事实性信息，按其许可保留版权声明
+（其中 1D57 家族的 48 个型号与报文 `03 <型号ID> 40 <状态> <电量>` 来自前两个项目）：
 
 | 项目 | 版权 | 用到的内容 |
 |---|---|---|
@@ -289,6 +290,8 @@ corner when you go fullscreen (browser or borderless games).
 - **Direct HID access** — no vendor drivers, no background services
 - **Config-driven** — device protocols live in `devices/*.json`; supporting a new
   device is a JSON edit, not a code change
+- **Wide device support** — Logitech HID++ 2.0 plus ATK / VXE / VGN / Dareu / G-Wolves /
+  MCHOSE / A8A5 2.4G receivers
 - **Plugged-in devices only** — rows appear when a receiver is present and disappear
   the moment it is unplugged
 - **Upgrade-safe** — just overwrite the folder; configs removed by a release are
