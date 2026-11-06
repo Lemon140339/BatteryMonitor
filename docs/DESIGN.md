@@ -234,6 +234,32 @@ Z 序检查显示「上方没有窗口」（只有 shell 的 `ForegroundStaging`
 
 配置错误不会静默失败：加载时校验，失败写 `config-error.log`，屏幕上显示红字。
 
+### 一个接收器配多种型号
+
+Beken 1D57 这类接收器会把"配对的鼠标型号"写进每一帧报文的第 1 字节
+（`03 <型号ID> 40 <状态> <电量>`）：同一个接收器换只鼠标，变的只是这个字节。
+
+如果按型号拆成一堆 JSON，插上接收器时这些配置会同时命中同一个 HID 接口（存在性判据是接口），
+界面上就会冒出一排 `--`。所以做成**一份配置 + 型号表**：
+
+- `modelIndex` 指定型号字节在报文里的位置；`models` 给"型号 ID → 显示名 / 电量倍率"
+  （有些型号按 10% 档上报，比如 `8` 表示 80%，用 `scale: 10` 换算）
+- 第一次识别立刻生效；之后换型号要连续 3 帧稳定才切，避免同一接收器下两只设备抢名字
+- 切换型号时清掉旧电量——那是上一只设备的数值；表里没有的型号用配置的通用名照常显示
+- 同一时刻只显示最近有数据的那一只（多设备共用接收器的限制写在 README）
+
+### 界面只显示当前接入的设备
+
+"配置存在"不等于"设备在"。判据用 **HID 接口路径是否存在**（`HidPresence` 每秒扫一次 SetupAPI），
+**不是"最近有没有读到数据"**：
+
+- 接收器插着、鼠标/键盘休眠：接口一直在 → 行保留，电量按 5 分钟规则保留旧值
+- 接收器拔掉：接口消失 → 行**立即**隐藏（这是用户明确指定的行为）
+- 一台都没检测到：显示一行「未检测到设备」，否则悬浮层会变成一条空的透明条
+
+用"最近有没有数据"当判据会把休眠的键盘误判成设备拔掉，所以不能用。
+扫接口的代价很低（一次 SetupAPI 枚举），1 秒一次对 CPU 没有可感影响。
+
 ---
 
 ## 运行时结构
@@ -245,6 +271,7 @@ Program.Main
   ├─ ProfileLoader.Load(devices/)    解析 + 校验，产出 DeviceProfile 列表
   ├─ 每个 profile 起一个 DeviceWorker 独立线程，互不影响
   └─ WidgetApp（ApplicationContext） 每秒一次：
+       ├─ HidPresence.Refresh                     接口存在性（决定显示哪些行）
        ├─ 汇总 worker 状态 → TrayView.Update      图标 + 悬停提示 + 菜单
        ├─ FullscreenWatcher.IsForegroundFullscreen
        ├─ ShouldShowOverlay(tray, mode, fullscreen)
@@ -252,7 +279,7 @@ Program.Main
              └─ WidgetRender                      排版与绘制（纯 GDI+，不碰窗口 API）
 ```
 
-`DeviceWorker` 只维护一个 `Percent` 字段，变化时触发 `Updated`。
+`DeviceWorker` 维护 `Percent` / `Name` / `Present` 三个状态（`Name` 会随报文里的型号 ID 变化）。
 UI 每 1000ms 读一次全部 worker 的状态重绘——**不做事件驱动重绘**，因为设备更新频率低，轮询更简单也更稳。
 
 排版单独放在 `WidgetRender` 里，好处是能离屏画到 `Bitmap` 上核对对齐，

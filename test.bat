@@ -13,22 +13,35 @@ if not exist "%CSC%" (
 
 if not exist "%HERE%.tmp-test" mkdir "%HERE%.tmp-test"
 
-echo Running logic tests...
+echo Running logic tests: shell windows...
 "%CSC%" /nologo /target:exe /out:"%HERE%.tmp-test\ShellWindowRulesTest.exe" ^
   "%HERE%src\ShellWindowRules.cs" ^
   "%HERE%tests\ShellWindowRulesTest.cs"
-if errorlevel 1 (
-  echo.
-  echo TEST BUILD FAILED
-  exit /b 1
-)
-
+if errorlevel 1 goto :buildfail
 "%HERE%.tmp-test\ShellWindowRulesTest.exe"
-if errorlevel 1 (
-  echo.
-  echo TESTS FAILED
-  exit /b 1
-)
+if errorlevel 1 goto :testfail
+
+echo.
+echo Running logic tests: profiles and models...
+"%CSC%" /nologo /target:exe /out:"%HERE%.tmp-test\ProfileModelTest.exe" ^
+  "%HERE%src\Profile.cs" ^
+  "%HERE%src\HidDevice.cs" ^
+  "%HERE%tests\ProfileModelTest.cs" ^
+  /r:System.Web.Extensions.dll
+if errorlevel 1 goto :buildfail
+"%HERE%.tmp-test\ProfileModelTest.exe"
+if errorlevel 1 goto :testfail
 
 echo.
 echo OK - all tests passed
+exit /b 0
+
+:buildfail
+echo.
+echo TEST BUILD FAILED
+exit /b 1
+
+:testfail
+echo.
+echo TESTS FAILED
+exit /b 1

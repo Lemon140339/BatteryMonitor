@@ -97,7 +97,14 @@ namespace BatteryMonitor
                 rows.Add(new WidgetRow("无设备配置", -1, "devices/ 为空"));
                 return rows;
             }
-            foreach (var w in workers) rows.Add(new WidgetRow(w.Name, w.Percent, null));
+
+            // 只显示接口确实存在的设备：接收器没插/已拔掉的配置不占行
+            foreach (var w in workers)
+            {
+                if (w.Present) rows.Add(new WidgetRow(w.Name, w.Percent, null));
+            }
+
+            if (rows.Count == 0) rows.Add(new WidgetRow("未检测到设备", -1, null));
             return rows;
         }
 
@@ -134,6 +141,19 @@ namespace BatteryMonitor
 
         void RefreshCore()
         {
+            // 接口存在与否决定显示哪些设备（接收器拔掉后立刻隐藏那一行）
+            HidPresence.Refresh();
+            for (int i = 0; i < _workers.Count; i++)
+            {
+                var w = _workers[i];
+                bool present = HidPresence.IsPresent(w.Profile);
+                if (present != w.Present)
+                {
+                    w.SetPresent(present);
+                    DebugLog.Write((present ? "设备接入：" : "设备移除：") + w.Name);
+                }
+            }
+
             var rows = BuildRows(_workers);
             _tray.Update(rows, _mode);
 

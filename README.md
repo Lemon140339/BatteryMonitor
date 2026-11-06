@@ -16,6 +16,8 @@
 - **两种形态** —— 平时待在托盘（悬停看电量），全屏看视频或玩游戏时自动浮到右上角
 - **透明文字层** —— 右上层背景完全透明，鼠标穿透，不影响任何点击
 - **配置驱动** —— 设备协议写在 `devices/*.json`，新增设备不用改代码
+- **只显示当前接入的设备** —— 接收器没插、或者拔掉之后，那一行立即消失，不会留一排 `--` 空行；
+  一台都没检测到时显示「未检测到设备」
 - **单文件 exe** —— 约 46 KB，无第三方依赖（只需 .NET Framework 4.x）；托盘图标是代码画的，不带资源文件
 - **只读** —— 不写设备、不改设置，仅做查询与监听
 
@@ -41,7 +43,7 @@
 BatteryMonitor\
 ├── BatteryMonitor.exe
 ├── devices\
-│   ├── in10.json
+│   ├── beken-1d57.json
 │   └── ky87.json
 └── install-autostart.bat
 ```
@@ -93,8 +95,12 @@ BatteryMonitor.exe --log
 
 | 名称 | 接收器 VID:PID | 接口 | 模式 |
 |---|---|---|---|
-| IN10 | `1D57:FA65` | `col03` | 被动读 5 字节 |
+| 2.4G 无线鼠标（Beken 1D57 家族） | `1D57:FA60` / `FA62` / `FA65` | `col03` | 被动读 5 字节，按报文里的型号 ID 识别（INPHIC IN10、Attack Shark X11 等 48 个型号） |
 | KY87 | `0C45:FEFE` | `mi_03` | 查询 33 字节 |
+
+> IN10 也在上面的 1D57 家族里（型号 ID `0x93`），不再单独占一个配置文件；
+> 同一接收器换了鼠标会自动改名（同一时刻只显示最近有数据的那一只）。
+> 型号表与报文格式来自两个 MIT 项目，见 [设备数据来源与致谢](#设备数据来源与致谢)。
 
 ## 构建
 
@@ -129,7 +135,8 @@ package.bat v1.0.1
 src/
   Profile.cs          设备描述模型 + JSON 加载
   HidDevice.cs        通用 HID 打开/读写
-  DeviceWorker.cs     按 profile 驱动设备（被动 / 查询）
+  HidPresence.cs      判断设备接口当前在不在（决定界面显示哪些设备）
+  DeviceWorker.cs     按 profile 驱动设备（被动 / 查询；型号识别）
   WidgetRender.cs     排版与绘制（列对齐、宽度自适应，可离屏渲染）
   WidgetForm.cs       透明文字层（悬浮层）
   TrayView.cs         托盘图标（代码画的电池）+ 悬停提示 + 右键菜单
@@ -139,7 +146,8 @@ src/
   DebugLog.cs         --log 支持
   Program.cs          入口（含按需提权）
 devices/
-  *.json              设备描述
+  beken-1d57.json     1D57 无线接收器家族（48 个型号 ID 共用一份配置）
+  ky87.json           查询模式示例
   device.schema.json  JSON Schema（编辑器自动补全）
 docs/
   ADD_DEVICE.md       如何适配新设备
@@ -148,9 +156,10 @@ docs/
   tray.png            托盘图标样张
   social-preview.png  仓库社交预览图（在 GitHub 设置里上传）
 USAGE-zh.txt              中文使用说明
-test.bat                  逻辑单测（目前覆盖外壳窗口判定）
+test.bat                  逻辑单测（外壳窗口判定 / 配置模型 / 接口路径匹配）
 tests/
   ShellWindowRulesTest.cs
+  ProfileModelTest.cs
 install-autostart.bat     注册开机自启
 uninstall-autostart.bat   取消开机自启
 ```
@@ -159,6 +168,9 @@ uninstall-autostart.bat   取消开机自启
 
 - 键盘休眠时会读不到，保留上次数值；按键后自动恢复
   （连续 5 分钟都读不到才退回 `--`，避免旧值一直冒充实时值）
+- 界面只显示接收器当前插着的设备；设备休眠不会让行消失——判据是接收器接口在不在，
+  不是最近有没有数据。拔掉接收器那一行立即消失
+- 同一接收器同时配了两只设备时，同一时刻只显示最近有数据的那一只（型号要连续 3 帧稳定才切换）
 - 查询类设备默认 30 秒轮询一次
 - **独占全屏（D3D exclusive）下看不到悬浮层**：游戏接管了屏幕合成，分层窗口画不上去；
   无边框窗口化全屏可以。这时只能靠托盘（它也被盖住，要切出来才看得到）
@@ -189,6 +201,24 @@ uninstall-autostart.bat   取消开机自启
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南（含 C# 5 语法约束） |
 | [DISCLAIMER.md](DISCLAIMER.md) | 免责声明 |
 
+## 设备数据来源与致谢
+
+内置的 1D57 无线接收器家族配置（[`devices/beken-1d57.json`](devices/beken-1d57.json)：
+48 个型号 ID，电量报文 `03 <型号ID> 40 <状态> <电量>`）用到了下面两个 **MIT** 项目公开的事实性信息，
+按其许可保留版权声明：
+
+| 项目 | 版权 | 用到的内容 |
+|---|---|---|
+| [attack-shark-x11-driver](https://github.com/HarukaYamamoto0/attack-shark-x11-driver) | Copyright (c) 2026 HarukaYamamoto0 | 型号 ID 表（`devices.ts`）、电量报文格式、充电态取值 |
+| [mouse-battery-tray](https://github.com/incconutwo/mouse-battery-tray) | Copyright (c) 2026 incconu_two | Beken 接收器读取方式、接收器 PID、10% 档换算 |
+
+本项目的实现是独立完成的，只使用了上述项目公开的协议事实，没有包含它们的代码；
+完整 MIT 许可文本见各自仓库的 `LICENSE`。
+
+也感谢 [OpenMouse](https://github.com/OpenMouse-Project/openmouse)（AGPL-3.0）：
+它帮助我们交叉核对了 Beken 家族的型号表与报文语义。**没有复制它的代码或数据表**——
+AGPL-3.0 与本项目的 MIT 不兼容，只作为参考资料。
+
 ## 参与贡献
 
 - 报告问题：用 [Issue 模板](https://github.com/Lemon140339/BatteryMonitor/issues/new/choose)
@@ -215,6 +245,8 @@ corner when you go fullscreen (browser or borderless games).
 - **Direct HID access** — no vendor drivers, no background services
 - **Config-driven** — device protocols live in `devices/*.json`; supporting a new
   device is a JSON edit, not a code change
+- **Plugged-in devices only** — rows appear when a receiver is present and disappear
+  the moment it is unplugged
 - **Single ~46 KB exe** — only needs .NET Framework 4.x
 - **Read-only** — it never writes to the device
 

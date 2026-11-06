@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -75,14 +76,14 @@ namespace BatteryMonitor
 
         IntPtr _handle = new IntPtr(-1);
 
-        public static string FindPath(string vid, string pid, string iface)
+        /// <summary>枚举当前系统里所有 HID 接口路径（一次 SetupAPI 扫描）。</summary>
+        public static List<string> EnumeratePaths()
         {
-            if (string.IsNullOrEmpty(vid) || string.IsNullOrEmpty(pid)) return null;
-            string want = ("vid_" + vid + "&pid_" + pid).ToLowerInvariant();
+            var paths = new List<string>();
 
             Guid g = GUID_HID;
             IntPtr hdev = SetupDiGetClassDevs(ref g, IntPtr.Zero, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
-            if (hdev == new IntPtr(-1)) return null;
+            if (hdev == new IntPtr(-1)) return paths;
             try
             {
                 for (int i = 0; ; i++)
@@ -103,17 +104,35 @@ namespace BatteryMonitor
                         int got = 0;
                         if (!SetupDiGetDeviceInterfaceDetail(hdev, ref did, buf, need, ref got, IntPtr.Zero)) continue;
                         string path = Marshal.PtrToStringUni(new IntPtr(buf.ToInt64() + 4));
-                        if (path == null) continue;
-
-                        string low = path.ToLowerInvariant();
-                        if (!low.Contains(want)) continue;
-                        if (!string.IsNullOrEmpty(iface) && !low.Contains(iface.ToLowerInvariant())) continue;
-                        return path;
+                        if (!string.IsNullOrEmpty(path)) paths.Add(path);
                     }
                     finally { Marshal.FreeHGlobal(buf); }
                 }
             }
             finally { SetupDiDestroyDeviceInfoList(hdev); }
+            return paths;
+        }
+
+        /// <summary>
+        /// 接口路径是否匹配 VID/PID（路径里是 "vid_1d57&amp;pid_fa65" 这种）以及可选的接口片段。
+        /// 抽成纯函数，方便直接测（tests/ProfileModelTest.cs）。
+        /// </summary>
+        public static bool MatchesPath(string path, string vid, string pid, string iface)
+        {
+            if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(vid) || string.IsNullOrEmpty(pid)) return false;
+            string low = path.ToLowerInvariant();
+            if (!low.Contains(("vid_" + vid + "&pid_" + pid).ToLowerInvariant())) return false;
+            if (!string.IsNullOrEmpty(iface) && !low.Contains(iface.ToLowerInvariant())) return false;
+            return true;
+        }
+
+        public static string FindPath(string vid, string pid, string iface)
+        {
+            if (string.IsNullOrEmpty(vid) || string.IsNullOrEmpty(pid)) return null;
+            foreach (string path in EnumeratePaths())
+            {
+                if (MatchesPath(path, vid, pid, iface)) return path;
+            }
             return null;
         }
 

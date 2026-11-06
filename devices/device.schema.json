@@ -3,7 +3,7 @@
   "title": "BatteryMonitor 设备描述",
   "description": "描述一台无线设备的电量读取方式。字段说明见 docs/ADD_DEVICE.md",
   "type": "object",
-  "required": ["name", "vid", "pid", "battery"],
+  "required": ["name", "vid", "battery"],
   "properties": {
     "$schema": {
       "type": "string",
@@ -12,7 +12,7 @@
     "name": {
       "type": "string",
       "minLength": 1,
-      "description": "显示在屏幕上的名字，例如 IN10"
+      "description": "显示在屏幕上的名字，例如 IN10。用了 models 时这是认不出型号时的通用名"
     },
     "vid": {
       "type": "string",
@@ -22,7 +22,13 @@
     "pid": {
       "type": "string",
       "pattern": "^[0-9A-Fa-f]{4}$",
-      "description": "产品 ID，4 位十六进制，例如 FA65"
+      "description": "产品 ID，4 位十六进制，例如 FA65。单个设备用这个；一个接收器家族有多份 PID 时改用 pids"
+    },
+    "pids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^[0-9A-Fa-f]{4}$" },
+      "description": "一组接收器 PID：同一个接收器家族共用一份配置（与 pid 二选一）"
     },
     "iface": {
       "type": "string",
@@ -52,6 +58,28 @@
         "pattern": "^(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})$"
       },
       "examples": [{ "1": "0x93", "2": "0x40" }]
+    },
+    "modelIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "passive 模式：报文里“型号 ID”的字节下标。配合 models，一份配置可识别同一接收器下的多个型号"
+    },
+    "models": {
+      "type": "object",
+      "description": "型号 ID -> 显示名 / 电量倍率；键写 0x93 这种十六进制",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "scale": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "电量倍率，默认 1；按 10% 档上报的型号填 10（值 8 表示 80%）"
+          }
+        },
+        "required": ["name"]
+      },
+      "examples": [{ "0x93": { "name": "IN10" }, "0x10": { "name": "R1", "scale": 10 } }]
     },
     "query": {
       "type": "object",
