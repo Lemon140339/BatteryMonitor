@@ -53,6 +53,12 @@ build.bat
 
 需要 Windows 自带的 .NET Framework 4.x。
 
+跑逻辑单测（目前覆盖「哪些前台窗口不算全屏」的规则）：
+
+```bat
+test.bat
+```
+
 ### 代码约束
 
 **必须保持 C# 5 语法。** 编译器是 Windows 自带的 `csc.exe`

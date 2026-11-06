@@ -30,6 +30,12 @@ namespace BatteryMonitor
         static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll")]
+        static extern IntPtr GetShellWindow();
+
+        [DllImport("user32.dll")]
+        static extern IntPtr GetDesktopWindow();
+
+        [DllImport("user32.dll")]
         static extern bool GetWindowRect(IntPtr h, out RECT r);
 
         [DllImport("user32.dll")]
@@ -86,6 +92,13 @@ namespace BatteryMonitor
             uint pid;
             GetWindowThreadProcessId(fg, out pid);
             if (pid == SelfPid) return false;
+
+            // 桌面、任务视图这类外壳窗口的矩形也是整块屏幕，必须先把它们排掉：
+            // 否则点一下桌面 / 按 Win+D，悬浮层就会误以为自己该出现。
+            var cls = new StringBuilder(256);
+            GetClassName(fg, cls, cls.Capacity);
+            if (ShellWindowRules.ShouldIgnore(fg, GetShellWindow(), GetDesktopWindow(), cls.ToString()))
+                return false;
 
             RECT r;
             if (!GetWindowRect(fg, out r)) return false;

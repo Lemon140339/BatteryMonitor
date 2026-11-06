@@ -19,6 +19,10 @@ jobs:
         shell: cmd
         run: build.bat
 
+      - name: Run logic tests
+        shell: cmd
+        run: test.bat
+
       - name: Verify output
         shell: pwsh
         run: |

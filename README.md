@@ -134,6 +134,7 @@ src/
   WidgetForm.cs       透明文字层（悬浮层）
   TrayView.cs         托盘图标（代码画的电池）+ 悬停提示 + 右键菜单
   FullscreenWatcher.cs 判断前台是否全屏
+  ShellWindowRules.cs 判断前台窗口是不是桌面/外壳窗口（不算全屏）
   WidgetApp.cs        显示策略：托盘 / 悬浮层怎么分工
   DebugLog.cs         --log 支持
   Program.cs          入口（含按需提权）
@@ -147,6 +148,9 @@ docs/
   tray.png            托盘图标样张
   social-preview.png  仓库社交预览图（在 GitHub 设置里上传）
 USAGE-zh.txt              中文使用说明
+test.bat                  逻辑单测（目前覆盖外壳窗口判定）
+tests/
+  ShellWindowRulesTest.cs
 install-autostart.bat     注册开机自启
 uninstall-autostart.bat   取消开机自启
 ```
