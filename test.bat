@@ -30,8 +30,9 @@ echo Running logic tests: profiles and models...
   "%HERE%src\DebugLog.cs" ^
   "%HERE%src\ProtocolCodec.cs" ^
   "%HERE%src\Hidpp.cs" ^
+  "%HERE%src\Autostart.cs" ^
   "%HERE%tests\ProfileModelTest.cs" ^
-  /r:System.Web.Extensions.dll
+  /r:System.Web.Extensions.dll /r:System.dll
 if errorlevel 1 goto :buildfail
 "%HERE%.tmp-test\ProfileModelTest.exe"
 if errorlevel 1 goto :testfail

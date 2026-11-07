@@ -120,6 +120,7 @@ namespace BatteryMonitor
         readonly ToolStripMenuItem _autoItem;
         readonly ToolStripMenuItem _alwaysItem;
         readonly ToolStripMenuItem _hiddenItem;
+        readonly ToolStripMenuItem _autostartItem;
         readonly uint _taskbarCreated;
 
         string[] _lastLines;
@@ -134,6 +135,9 @@ namespace BatteryMonitor
 
         public event Action<DisplayMode> ModeRequested;
         public event Action QuitRequested;
+
+        /// <summary>用户点了"开机自启"。勾选状态由 TrayView 自己读计划任务维护。</summary>
+        public event Action AutostartRequested;
 
         public TrayView() : this(false)
         {
@@ -152,11 +156,21 @@ namespace BatteryMonitor
             var quit = new ToolStripMenuItem("退出");
             quit.Click += delegate { Raise(QuitRequested); };
 
+            _autostartItem = new ToolStripMenuItem("开机自启");
+            _autostartItem.ToolTipText = "登录时以最高权限启动（可能需要一次管理员授权）";
+            _autostartItem.Click += delegate
+            {
+                var h = AutostartRequested;
+                if (h != null) h();
+            };
+
             _menu.Items.AddRange(new ToolStripItem[]
             {
                 _autoItem,
                 _alwaysItem,
                 _hiddenItem,
+                new ToolStripSeparator(),
+                _autostartItem,
                 new ToolStripSeparator(),
                 quit
             });
@@ -247,10 +261,22 @@ namespace BatteryMonitor
 
         void ShowMenu()
         {
+            RefreshAutostart();          // 每次弹菜单前重读计划任务，保证勾选状态是真的
             SetForegroundWindow(_host.Handle);
             _menu.Show(Cursor.Position);
             // 菜单关掉后把焦点还给原来的窗口，否则点别处菜单不消失
             PostMessage(_host.Handle, WM_NULL, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        /// <summary>
+        /// 读一次计划任务状态并更新勾选。schtasks 查询约几十毫秒，只在弹菜单/设置后调，
+        /// 不要放进每秒的 Update 里。
+        /// </summary>
+        public void RefreshAutostart()
+        {
+            if (_disposed) return;
+            try { _autostartItem.Checked = Autostart.IsEnabled(); }
+            catch { }
         }
 
         void SetChecks(DisplayMode mode)

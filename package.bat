@@ -26,8 +26,6 @@ copy /y "%HERE%USAGE-zh.txt"              "%DIST%" >nul
 copy /y "%HERE%README.md"                 "%DIST%" >nul
 copy /y "%HERE%DISCLAIMER.md"             "%DIST%" >nul
 copy /y "%HERE%LICENSE"                   "%DIST%" >nul
-copy /y "%HERE%install-autostart.bat"     "%DIST%" >nul
-copy /y "%HERE%uninstall-autostart.bat"   "%DIST%" >nul
 copy /y "%HERE%devices\*.json"            "%DIST%\devices" >nul
 copy /y "%HERE%docs\*.*"                  "%DIST%\docs" >nul
 

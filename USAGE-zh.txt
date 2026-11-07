@@ -82,8 +82,6 @@
     device.schema.json    编辑器补全用，程序会跳过
     manifest.json         配置清单（升级时用来清理旧配置）
   USAGE-zh.txt            本文件
-  install-autostart.bat   注册开机自启
-  uninstall-autostart.bat 取消开机自启
 
 移动或复制时请把**整个文件夹一起动**，只拷 exe 是不行的。
 
@@ -98,25 +96,29 @@
 
 开机自启
 --------
-已注册计划任务：
+托盘图标右键 → 「开机自启」打勾/取消即可，不需要再找外置脚本。
+
+它对应一个计划任务：
 
     任务名 BatteryMonitor
     触发   登录时
-    权限   最高
-    操作   C:\Program Files\BatteryMonitor\BatteryMonitor.exe
+    权限   最高（这样开机后托盘一定能注册，不会再弹 UAC）
+    操作   当前 BatteryMonitor.exe 的完整路径
 
-需要重新设置时：右键「install-autostart.bat」→ 以管理员身份运行。
-取消自启：右键「uninstall-autostart.bat」→ 以管理员身份运行。
+说明：
 
-注意：安装脚本是覆盖式的，不需要先卸载。
+  · 改这个任务需要管理员权限。程序自己已经是管理员时无感；
+    普通权限下点菜单会弹一次 UAC，同意即可（拒绝就什么都不变）。
+  · 勾选状态是实时读计划任务得到的，不看配置文件。
+  · 程序装在 Program Files 里也能用：任务只会启动这个 exe，不写 exe 目录。
 
 
 移动文件夹之后
 --------------
 任务里存的是绝对路径，文件夹一挪就失效。
 
-处理办法：在新位置右键「install-autostart.bat」→ 以管理员身份运行，
-脚本会用新路径覆盖同名任务，并立即启动。
+处理办法：在新位置启动 BatteryMonitor.exe，托盘右键 → 把「开机自启」
+取消勾选、再勾一次（会用新路径重新注册任务）。
 
 
 排查问题

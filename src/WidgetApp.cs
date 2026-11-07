@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -48,6 +50,7 @@ namespace BatteryMonitor
         string _lastNeighborAbove;
         readonly bool _selfCheck;
         int _selfCheckTicks;
+        volatile bool _autostartRefreshPending;
 
         public WidgetApp(IList<DeviceWorker> workers, IList<string> problems, bool selfCheck)
         {
@@ -63,6 +66,7 @@ namespace BatteryMonitor
             _tray = new TrayView();
             _tray.ModeRequested += OnModeRequested;
             _tray.QuitRequested += Quit;
+            _tray.AutostartRequested += OnAutostartRequested;
 
             bool trayOk = _tray.Attach();
             DebugLog.Write("启动：托盘=" + (trayOk ? "可用" : "不可用") + "，模式=" + ModeText(_mode));
@@ -157,6 +161,13 @@ namespace BatteryMonitor
             var rows = BuildRows(_workers);
             _tray.Update(rows, _mode);
 
+            // 自启的事可能是另一个提权助手进程在改，等它结束再回读勾选状态
+            if (_autostartRefreshPending)
+            {
+                _autostartRefreshPending = false;
+                _tray.RefreshAutostart();
+            }
+
             IntPtr fullscreenWindow;
             Rectangle fullscreenScreen;
             bool fullscreen = FullscreenWatcher.TryGetForegroundFullscreen(out fullscreenWindow, out fullscreenScreen);
@@ -239,6 +250,76 @@ namespace BatteryMonitor
             DebugLog.Write("显示模式切换为 " + ModeText(mode));
             AppSettings.SaveMode(mode);
             Refresh();
+        }
+
+        /// <summary>
+        /// 开机自启开关。任务存在就是开、不存在就是关；点一下取反。
+        ///
+        /// 注册/删除计划任务需要管理员，所以分两条路：
+        /// - 当前进程已提权（有些机器托盘本来就要提权）→ 直接改，无感；
+        /// - 普通权限 → 用 runas 起一个隐藏的助手进程（--autostart-on/off），用户点一次 UAC。
+        ///   助手进程改完就退出，这边等 2 秒再回读勾选状态。
+        /// </summary>
+        void OnAutostartRequested()
+        {
+            bool enabled = Autostart.IsEnabled();
+            bool target = !enabled;
+
+            if (Program.IsElevated())
+            {
+                string error;
+                bool ok = Autostart.SetEnabled(target, Application.ExecutablePath, out error);
+                DebugLog.Write("开机自启：" + (target ? "开启" : "关闭") +
+                    (ok ? " 成功" : " 失败 —— " + error));
+                if (!ok)
+                    MessageBox.Show("设置开机自启失败：\n" + error, "BatteryMonitor",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _tray.RefreshAutostart();
+                return;
+            }
+
+            try
+            {
+                var psi = new ProcessStartInfo(Application.ExecutablePath,
+                    target ? "--autostart-on" : "--autostart-off");
+                psi.UseShellExecute = true;
+                psi.Verb = "runas";
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+                Process helper = Process.Start(psi);
+                DebugLog.Write("已请求管理员权限修改开机自启（" + (target ? "开启" : "关闭") + "）");
+
+                if (helper != null)
+                {
+                    // 等助手进程结束：成功就以它的退出码为准；失败给一次明确提示，别让用户以为已经改好了
+                    System.Threading.ThreadPool.QueueUserWorkItem(delegate
+                    {
+                        int code = -1;
+                        try { if (helper.WaitForExit(30000)) code = helper.ExitCode; }
+                        catch { }
+                        _autostartRefreshPending = true;
+                        if (code != 0)
+                        {
+                            try
+                            {
+                                MessageBox.Show("设置开机自启失败（可能被安全软件拦截，或在 UAC 里被拒绝）。\n" +
+                                    "可以带 --log 启动后重试，日志在同目录 battery.log。",
+                                    "BatteryMonitor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            }
+                            catch { }
+                        }
+                    });
+                }
+            }
+            catch (Win32Exception)
+            {
+                DebugLog.Write("用户取消了提权，开机自启未改动");
+            }
+            catch (Exception ex)
+            {
+                DebugLog.Write("自启助手启动失败：" + ex.Message);
+                MessageBox.Show("无法申请管理员权限：\n" + ex.Message, "BatteryMonitor",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         static string ModeText(DisplayMode mode)

@@ -16,6 +16,19 @@ namespace BatteryMonitor
         {
             DebugLog.Enabled = HasFlag(args, "--log");
 
+            // 开机自启的提权助手：只改计划任务，不建窗口、不起托盘、不读设备配置。
+            // 托盘菜单在普通权限下会用 runas 以这两个参数重启自己（用户会看到一次 UAC）。
+            if (HasFlag(args, "--autostart-on") || HasFlag(args, "--autostart-off"))
+            {
+                bool enable = HasFlag(args, "--autostart-on");
+                string error;
+                bool ok = Autostart.SetEnabled(enable, Application.ExecutablePath, out error);
+                DebugLog.Write("自启助手：" + (enable ? "开启" : "关闭") +
+                    (ok ? " 成功" : " 失败 —— " + error));
+                Environment.ExitCode = ok ? 0 : 1;
+                return;
+            }
+
             // 必须在创建任何窗口之前调用：下面的托盘探测会建窗口
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -70,7 +83,7 @@ namespace BatteryMonitor
             finally { probe.Dispose(); }
         }
 
-        static bool IsElevated()
+        public static bool IsElevated()
         {
             try
             {

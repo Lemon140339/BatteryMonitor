@@ -45,11 +45,11 @@
 BatteryMonitor\
 ├── BatteryMonitor.exe
 ├── devices\           内置 10 份配置（罗技、ATK、VXE/VGN、达尔优、G-Wolves、MCHOSE、A8A5、INPHIC…）
-└── install-autostart.bat
+└── USAGE-zh.txt
 ```
 
 1. 双击 `BatteryMonitor.exe`
-2. 需要开机自启：右键 `install-autostart.bat` → 以管理员身份运行
+2. 需要开机自启：托盘图标右键 → **开机自启**（登录时以最高权限启动；第一次设置会弹一次 UAC）
 
 启动时会先试注册托盘图标；注册不了才弹 UAC 提权重来一次（拒绝也能用，退化成一直显示悬浮层）。
 
@@ -71,6 +71,7 @@ BatteryMonitor\
 | 自动：全屏时显示悬浮层 | 默认。平时只留托盘，全屏时浮出 |
 | 总是显示悬浮层 | 不管全屏与否都显示 |
 | 隐藏悬浮层，只留托盘 | 只在托盘里看 |
+| 开机自启 | 登录时以最高权限启动（计划任务）。勾选状态表示当前已开启；改动时可能需要一次管理员授权 |
 | 退出 | 结束程序 |
 
 > 选中的模式会被记住（存在 `%APPDATA%\BatteryMonitor\settings.json`），下次启动沿用，不用每次重选。
@@ -158,6 +159,7 @@ src/
   HidDevice.cs        通用 HID 打开/读写；Feature 报告、usage 选择、报告描述符
   Hidpp.cs            罗技 HID++ 2.0 会话（feature 发现、多设备索引、电量解析）
   ProtocolCodec.cs    配置驱动的组帧/校验/异或解码（纯逻辑，可单测）
+  Autostart.cs        开机自启：计划任务的查询/注册/删除
   HidPresence.cs      判断设备接口当前在不在（决定界面显示哪些设备）
   DeviceWorker.cs     按 profile 驱动设备（被动 / 查询 / HID++；型号识别）
   WidgetRender.cs     排版与绘制（列对齐、宽度自适应，可离屏渲染）
@@ -188,8 +190,6 @@ test.bat                  逻辑单测（外壳窗口判定 / 配置模型 / 协
 tests/
   ShellWindowRulesTest.cs
   ProfileModelTest.cs
-install-autostart.bat     注册开机自启
-uninstall-autostart.bat   取消开机自启
 ```
 
 ## 已知限制
@@ -217,6 +217,8 @@ uninstall-autostart.bat   取消开机自启
 - 托盘图标最多画 3 个电池（16×16 塞不下更多），设备超过 3 台时只显示最差的那台，
   完整数值看悬停提示和右键菜单
 - 有些机器的通知区只允许高权限进程注册图标，此时启动会弹一次 UAC（拒绝也能用，退回纯悬浮层）
+- 开机自启在托盘菜单里开关（对应计划任务 `BatteryMonitor`，登录时以最高权限启动）；
+  程序以普通权限运行时，切换它会弹一次 UAC
 - 仅 Windows（依赖 setupapi / user32 / shell32）
 - 需要 .NET Framework 4.x（Windows 10/11 自带）
 

@@ -26,6 +26,7 @@ namespace BatteryMonitorTests
             TestProtocolCodec();
             TestVariantProtocol();
             TestHidppCodec();
+            TestAutostart();
             TestConfigManifest();
             TestShippedConfigs();
 
@@ -544,6 +545,33 @@ namespace BatteryMonitorTests
             r[0] = 0x11; r[1] = 0xFF; r[2] = 0x08; r[3] = 0x0C;
             r[4] = percent; r[5] = level; r[6] = status;
             return r;
+        }
+
+        // ---------------- 开机自启：计划任务定义 ----------------
+
+        static void TestAutostart()
+        {
+            Check("autostart task name", Autostart.TaskName == "BatteryMonitor");
+
+            string script = Autostart.BuildInstallScript(@"C:\Program Files\BatteryMonitor\BatteryMonitor.exe");
+            Check("autostart script has exe",
+                script.IndexOf(@"'C:\Program Files\BatteryMonitor\BatteryMonitor.exe'") >= 0);
+            Check("autostart script at logon", script.IndexOf("-AtLogOn") >= 0);
+            Check("autostart script interactive", script.IndexOf("-LogonType Interactive") >= 0);
+            Check("autostart script highest", script.IndexOf("-RunLevel Highest") >= 0);
+            Check("autostart script battery settings",
+                script.IndexOf("-AllowStartIfOnBatteries") >= 0
+                && script.IndexOf("-DontStopIfGoingOnBatteries") >= 0);
+            Check("autostart script no execution limit", script.IndexOf("[TimeSpan]::Zero") >= 0);
+            Check("autostart script registers task",
+                script.IndexOf("Register-ScheduledTask -TaskName 'BatteryMonitor'") >= 0);
+            // 脚本要塞进 powershell -Command "..."，里面不能有双引号
+            Check("autostart script no double quotes", script.IndexOf('"') < 0);
+
+            // 路径里的单引号要转义成两个，否则 PowerShell 命令会被截断
+            string tricky = Autostart.BuildInstallScript(@"C:\it's\BatteryMonitor.exe");
+            Check("autostart escapes single quote",
+                tricky.IndexOf(@"'C:\it''s\BatteryMonitor.exe'") >= 0);
         }
 
         static void Check(string name, bool ok)
