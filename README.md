@@ -145,10 +145,10 @@ C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe ^
 生成发布包（编译 + 打包成 zip），版本号必须显式传：
 
 ```bat
-package.bat v1.2.0
+package.bat v1.2.1
 ```
 
-产物在 `dist\BatteryMonitor-<版本>.zip`（例如 `dist\BatteryMonitor-v1.2.0.zip`），包含 exe、devices、文档和脚本。
+产物在 `dist\BatteryMonitor-<版本>.zip`（例如 `dist\BatteryMonitor-v1.2.1.zip`），包含 exe、devices、文档和脚本。
 
 ## 目录结构
 
